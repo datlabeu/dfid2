@@ -2,9 +2,7 @@ package eu.datlab.worker.cl.raw;
 
 import com.gargoylesoftware.htmlunit.WebClient;
 import com.gargoylesoftware.htmlunit.html.DomElement;
-import com.gargoylesoftware.htmlunit.html.HtmlAnchor;
 import com.gargoylesoftware.htmlunit.html.HtmlPage;
-import com.gargoylesoftware.htmlunit.html.HtmlSpan;
 import eu.datlab.dataaccess.dao.DAOFactory;
 import eu.dl.core.RecoverableException;
 import eu.dl.core.UnrecoverableException;
@@ -67,15 +65,9 @@ public final class MPTenderDownloader<T extends Raw> extends BaseDownloader<T> {
             }
 
             // download detail page
-            HtmlPage detailPage;
-            try {
-                logger.info("Downloading detail page", sourceDataUrl);
-                detailPage = webClient.getPage(sourceDataUrl);
-                logger.info("Downloaded data from {}", sourceDataUrl);
-            } catch (IOException e) {
-                logger.error("Was not able to open detail page url: {}", e);
-                throw new RecoverableException("Was not able to open detail page url: ", e);
-            }
+            logger.info("Downloading detail page {}", sourceDataUrl);
+            HtmlPage detailPage = getPage(sourceDataUrl);
+            logger.info("Downloaded data from {}", sourceDataUrl);
 
             if (detailPage.getWebResponse().getContentAsString().contains(PAGE_INVALID)) {
                 throw new Error("We are blocked!");
@@ -85,105 +77,40 @@ public final class MPTenderDownloader<T extends Raw> extends BaseDownloader<T> {
             @SuppressWarnings("unchecked") final HashMap<String, Object> metadata = new HashMap();
 
             // download historial metadata
-            try {
-                // check if link exist and is not disabled
-                final DomElement historialLink = detailPage.getElementById("imgHistorial");
-                if (historialLink != null && !historialLink.getAttribute("disabled").equals("disabled")) {
-                    // download the page
-                    logger.info("Downloading historial page.");
-                    final HtmlPage historialPage = webClient.getPage(BASE_URL + historialLink.getAttribute("href"));
-                    logger.info("Historial page downloaded.");
+            // check if link exist and is not disabled
+            final DomElement historialLink = detailPage.getElementById("imgHistorial");
+            if (historialLink != null && !historialLink.getAttribute("disabled").equals("disabled")) {
+                // download the page
+                logger.info("Downloading historial page.");
+                final HtmlPage historialPage = getPage(BASE_URL + historialLink.getAttribute("href"));
+                logger.info("Historial page downloaded.");
 
-                    // save data in metadata
-                    @SuppressWarnings("unchecked") final HashMap<String, Object> historialData = new HashMap();
-                    historialData.put("url", historialPage.getUrl().toString());
-                    historialData.put("body", historialPage.getWebResponse().getContentAsString());
-                    metadata.put("historial", historialData);
-                } else {
-                    logger.info("No historial page for this tender.");
-                }
-            } catch (IOException e) {
-                logger.error("Error while downloading historial page: {}", e);
-                throw new RecoverableException("Was not able to open historial page: ", e);
+                // save data in metadata
+                @SuppressWarnings("unchecked") final HashMap<String, Object> historialData = new HashMap();
+                historialData.put("url", historialPage.getUrl().toString());
+                historialData.put("body", historialPage.getWebResponse().getContentAsString());
+                metadata.put("historial", historialData);
+            } else {
+                logger.info("No historial page for this tender.");
             }
 
             // download adjudicacion
-            try {
-                // check if link exist and is not disabled
-                final DomElement adjudicacionLink = detailPage.getElementById("imgAdjudicacion");
-                if (adjudicacionLink != null && !adjudicacionLink.getAttribute("disabled").equals("disabled")) {
-                    // download the page
-                    logger.info("Downloading adjudicacion page.");
-                    HtmlPage adjudicacionPage = webClient.getPage(BASE_URL + adjudicacionLink.getAttribute("href"));
-                    logger.info("Adjudicacion page downloaded.");
+            // check if link exist and is not disabled
+            final DomElement adjudicacionLink = detailPage.getElementById("imgAdjudicacion");
+            if (adjudicacionLink != null && !adjudicacionLink.getAttribute("disabled").equals("disabled")) {
+                // download the page
+                logger.info("Downloading adjudicacion page.");
+                HtmlPage adjudicacionPage = getPage(BASE_URL + adjudicacionLink.getAttribute("href"));
+                logger.info("Adjudicacion page downloaded.");
 
-                    // save the page to temporary metadata
-                    @SuppressWarnings("unchecked") final HashMap<String, Object> adjudicacionData = new HashMap();
-                    adjudicacionData.put("url", adjudicacionPage.getUrl().toString());
-                    adjudicacionData.put("body", adjudicacionPage.getWebResponse().getContentAsString());
+                // save the page to temporary metadata
+                @SuppressWarnings("unchecked") final HashMap<String, Object> adjudicacionData = new HashMap();
+                adjudicacionData.put("url", adjudicacionPage.getUrl().toString());
+                adjudicacionData.put("body", adjudicacionPage.getWebResponse().getContentAsString());
 
-                    // search for additional bodies to download
-                    final List<HtmlAnchor> adjudicacionBodies = adjudicacionPage.getByXPath("//table[@id='grdItemOC']//tr/td/a");
-
-                    // open and save bodies
-                    final HashMap<String, String> adjudicacionBodyPages = new HashMap<>();
-                    if (adjudicacionBodies != null && !adjudicacionBodies.isEmpty()) {
-                        logger.info("Downloading bodies for adjudicacion from page.");
-                        for (HtmlAnchor adjudicacionBody : adjudicacionBodies) {
-                            boolean bidderValid;
-                            int tries = 0;
-                            do {
-                                tries++;
-
-                                if (detailPage == null) {
-                                    try {
-                                        logger.info("Downloading detail page", sourceDataUrl);
-                                        detailPage = webClient.getPage(sourceDataUrl);
-                                        logger.info("Downloaded data from {}", sourceDataUrl);
-                                        adjudicacionPage = webClient.getPage(BASE_URL + adjudicacionLink.getAttribute("href"));
-                                    } catch (IOException e) {
-                                        logger.error("Was not able to open detail page url: {}", e);
-                                        throw new RecoverableException("Was not able to open detail page url: ", e);
-                                    }
-
-                                    if (detailPage.getWebResponse().getContentAsString().contains(PAGE_INVALID)) {
-                                        throw new Error("We are blocked!");
-                                    }
-                                }
-
-                                HtmlPage adjudicacionBodyPage = (HtmlPage) adjudicacionPage.executeJavaScript(adjudicacionBody
-                                        .getAttribute("onclick").replace("return false;", "")).getNewPage();
-                                final String bidderName = ((HtmlSpan) adjudicacionBodyPage
-                                        .getFirstByXPath("//span[@id='lblSocialReasonDesc']")).getTextContent();
-                                bidderValid = adjudicacionBody.getTextContent().contains(bidderName);
-
-                                if (!bidderValid) {
-                                    detailPage = null;
-                                    getNewWebclient();
-                                } else {
-                                    adjudicacionBodyPages.put(adjudicacionBody.getCanonicalXPath(), compress(adjudicacionBodyPage
-                                            .getWebResponse().getContentAsString()));
-                                }
-                            } while (!bidderValid && tries < 20);
-
-                            if (!bidderValid) {
-                                logger.error("Unable to download correct bidders for this tender {}", sourceDataUrl);
-                                throw new RecoverableException("Unable to download correct bidders for this tender " + sourceDataUrl);
-                            }
-
-                        }
-                        logger.info("Bodies from adjudicacion page downloaded.");
-                    }
-
-                    // save historial page and additional bodies to final metadata
-                    adjudicacionData.put("adjudicacionBodies", adjudicacionBodyPages);
-                    metadata.put("adjudicacion", adjudicacionData);
-                } else {
-                    logger.info("No adjudicacion page for this tender.");
-                }
-            } catch (IOException e) {
-                logger.error("Error while downloading adjudicacion page: {}", e);
-                throw new RecoverableException("Was not able to open adjudicacion page: ", e);
+                metadata.put("adjudicacion", adjudicacionData);
+            } else {
+                logger.info("No adjudicacion page for this tender.");
             }
 
             rawData.setSourceData(detailPage.getWebResponse().getContentAsString());
@@ -196,6 +123,29 @@ public final class MPTenderDownloader<T extends Raw> extends BaseDownloader<T> {
 
         // return result
         return Collections.singletonList(rawData);
+    }
+
+    /**
+     * @param url
+     *      url of the page
+     * @return html page
+     */
+    private HtmlPage getPage(final String url) {
+        HtmlPage page;
+        try {
+            page = webClient.getPage(url);
+        } catch (IOException e) {
+            logger.error("Unable to open page {} bacause of", url, e);
+            throw new RecoverableException("Unable to open page.", e);
+        }
+
+        int code = page.getWebResponse().getStatusCode();
+        if (code < 200 || code > 299) {
+            logger.error("Failing http status code exception: {} {} for {}", code, page.getWebResponse().getStatusMessage(), url);
+            throw new UnrecoverableException("Failing http status code exception");
+        }
+
+        return page;
     }
 
     @Override
@@ -245,5 +195,6 @@ public final class MPTenderDownloader<T extends Raw> extends BaseDownloader<T> {
         webClient.getOptions().setUseInsecureSSL(true);
         webClient.getOptions().setThrowExceptionOnScriptError(false);
         webClient.getOptions().setTimeout(90000);
+        webClient.getOptions().setThrowExceptionOnFailingStatusCode(false);
     }
 }

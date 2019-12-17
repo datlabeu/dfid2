@@ -11,7 +11,7 @@ import eu.dl.core.UnrecoverableException;
 import eu.dl.worker.Message;
 import eu.dl.worker.MessageFactory;
 import eu.dl.worker.raw.utils.CrawlerUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.mariuszgromada.math.mxparser.Expression;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

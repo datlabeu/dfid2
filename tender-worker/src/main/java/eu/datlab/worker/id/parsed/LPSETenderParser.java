@@ -3,6 +3,7 @@ package eu.datlab.worker.id.parsed;
 import eu.datlab.dataaccess.dto.codetables.PublicationSources;
 import eu.datlab.worker.parser.BaseDatlabTenderParser;
 import eu.dl.dataaccess.dto.codetables.BodyIdentifier;
+import eu.dl.dataaccess.dto.codetables.PublicationFormType;
 import eu.dl.dataaccess.dto.parsed.ParsedAddress;
 import eu.dl.dataaccess.dto.parsed.ParsedAwardCriterion;
 import eu.dl.dataaccess.dto.parsed.ParsedBid;
@@ -44,26 +45,40 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
          */
         NOTICE("pengumumanlelang", (d, t) -> {
             String procedureType = JsoupUtils.getFirstValueByLabel(d, "Metode Pengadaan");
+            if(procedureType == null || procedureType.isEmpty()){
+                procedureType = JsoupUtils.getFirstValueByLabel(d, "Sistem Pengadaan");
+            }
 
             t.setTitle(JsoupUtils.getFirstValueByLabel(d, "Nama (Lelang|Tender)"))
-                .addPublication(new ParsedPublication()
+                    .addBuyer(new ParsedBody().setName(JsoupUtils.getFirstValueByLabel(d, "Instansi")))
+                    .setSupplyType(JsoupUtils.getFirstValueByLabel(d, "Kategori"))
+                    .setNationalProcedureType(procedureType)
+                    .setProcedureType(procedureType)
+                    .addAwardCriterion(new ParsedAwardCriterion()
+                            .setName("Bobot Teknis")
+                            .setWeight(JsoupUtils.getFirstValueByLabel(d, "Bobot Teknis"))
+                            .setIsPriceRelated(Boolean.FALSE.toString()))
+                    .addAwardCriterion(new ParsedAwardCriterion()
+                            .setName("Bobot Biaya")
+                            .setWeight(JsoupUtils.getFirstValueByLabel(d, "Bobot Biaya"))
+                            .setIsPriceRelated(Boolean.TRUE.toString()))
+                    .setEligibilityCriteria(JsoupUtils.getFirstValueByLabel(d, "Syarat Kualifikasi"))
+                    .setSelectionMethod(JsoupUtils.getFirstValueByLabel(d, "Sistem Pengadaan"));
+
+            String sourceId = JsoupUtils.getFirstValueByLabel(d, "Kode (Lelang|Tender)");
+            t.getPublications().get(0)
                     .setIsIncluded(true)
                     .setSource(PublicationSources.ID_LPSE)
-                    .setPublicationDate(JsoupUtils.getFirstValueByLabel(d, "Tanggal Pembuatan"))
-                    .setSourceId(JsoupUtils.getFirstValueByLabel(d, "Kode (Lelang|Tender)")))
-                .addBuyer(new ParsedBody().setName(JsoupUtils.getFirstValueByLabel(d, "Instansi")))
-                .setSupplyType(JsoupUtils.getFirstValueByLabel(d, "Kategori"))
-                .setNationalProcedureType(procedureType)
-                .setProcedureType(procedureType)
-                .addAwardCriterion(new ParsedAwardCriterion()
-                    .setName("Bobot Teknis")
-                    .setWeight(JsoupUtils.getFirstValueByLabel(d, "Bobot Teknis"))
-                    .setIsPriceRelated(Boolean.FALSE.toString()))
-                .addAwardCriterion(new ParsedAwardCriterion()
-                    .setName("Bobot Biaya")
-                    .setWeight(JsoupUtils.getFirstValueByLabel(d, "Bobot Biaya"))
-                    .setIsPriceRelated(Boolean.TRUE.toString()))
-                .setEligibilityCriteria(JsoupUtils.getFirstValueByLabel(d, "Syarat Kualifikasi"));
+                    .setSourceId(sourceId)
+                    .setSourceFormType(PublicationFormType.CONTRACT_AWARD.name());
+
+            t.addPublication(new ParsedPublication()
+                    .setIsIncluded(false)
+                    .setSource(PublicationSources.ID_LPSE)
+                    .setSourceId(sourceId)
+                    .setSourceFormType(PublicationFormType.CONTRACT_NOTICE.name())
+                    .setPublicationDate(JsoupUtils.getFirstValueByLabel(d, "Tanggal Pembuatan")));
+
 
             String isAwarded = JsoupUtils.getFirstValueByLabel(d, "Tahap (Lelang|Tender) Saat ini");
             if (isAwarded != null) {
@@ -83,10 +98,10 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
             Elements rows = JsoupUtils.select("table.table-condensed > tbody > tr", d);
             for (Element r : rows) {
                 lot.addBid(new ParsedBid()
-                    .addBidder(new ParsedBody()
-                        .setName(getChildText(r, 1))
-                        .addBodyId(parseBodyId(getChildText(r, 2))))
-                    .setPrice(parsePrice(getChildText(r, 3))));
+                        .addBidder(new ParsedBody()
+                                .setName(getChildText(r, 1))
+                                .addBodyId(parseBodyId(getChildText(r, 2))))
+                        .setPrice(parsePrice(getChildText(r, 3))));
             }
 
             return t;
@@ -96,37 +111,69 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
          */
         RESULTS("hasil", (d, t) -> {
             ParsedTenderLot lot = t.getLots().get(0);
-
+            Elements header = JsoupUtils.select("table.table-condensed > thead > tr", d);
             Elements rows = JsoupUtils.select("table.table-condensed > tbody > tr", d);
+            int pColumn = 0, kColumn = 0, priceColumn = 0, reasonColumn = 0;
+            for (int i = 1; i < header.get(0).childNodeSize(); i += 2) {
+                if (header.get(0).childNode(i).childNodeSize() > 0
+                        && header.get(0).childNode(i).childNode(0).childNodeSize() > 0) {
+                    if (header.get(0).childNode(i).childNode(0).childNode(0).toString().equals("P")) {
+                        pColumn = i;
+                    } else if (header.get(0).childNode(i).childNode(0).childNode(0).toString().equals("K")) {
+                        kColumn = i;
+                    }
+                } else if (header.get(0).childNode(i).childNode(0).toString().equals("Penawaran Terkoreksi")) {
+                    priceColumn = i;
+                } else if (header.get(0).childNode(i).childNode(0).toString().equals("Alasan")) {
+                    reasonColumn = i;
+                }
+            }
+
+            final int pColumnNumber = pColumn;
+            final int kColumnNumber = kColumn;
+            final int priceColumnNumber = priceColumn;
+            final int reasonColumnNumber = reasonColumn;
 
             // update bidders and its bids
             rows.stream()
-                // checked in 'K' column
-                .filter(r -> !r.child(2).children().isEmpty())
-                .forEach(r -> {
-                    // get bid to be updated
-                    ParsedBid bid = Optional.ofNullable(lot.getBids()).orElse(Collections.emptyList()).stream()
-                        .filter(b -> {
-                            ParsedBody parsedBidder = b.getBidders().get(0);
+                    // checked in 'K' column
+                    .filter(r -> r.childNode(kColumnNumber).childNodeSize() != 0)
+                    .forEach(r -> {
+                        // get bid to be updated
+                        ParsedBid bid = Optional.ofNullable(lot.getBids()).orElse(Collections.emptyList()).stream()
+                                .filter(b -> {
+                                    ParsedBody parsedBidder = b.getBidders().get(0);
 
-                            String bidder = getChildText(r, 1);
+                                    String bidder = getChildText(r, 1);
 
-                            return bidder.startsWith(parsedBidder.getName().trim())
-                                && bidder.endsWith(parsedBidder.getBodyIds().get(0).getId());
-                        }).findFirst().orElse(null);
+                                    return (bidder.startsWith(parsedBidder.getName().trim())
+                                            && bidder.endsWith(parsedBidder.getBodyIds().get(0).getId()))
+                                            || parsedBidder.getName().trim().contains("Peserta");
+                                }).findFirst().orElse(null);
 
-                    if (bid == null) {
-                        return;
-                    }
+                        if (bid == null) {
+                            return;
+                        }
 
-                    bid.setPrice(parsePrice(getChildText(r, 8)))
-                        .setDisqualificationReason(getChildText(r, 14));
+                        if (bid.getBidders().get(0).getName().contains("Peserta")) {
+                            bid.getBidders().get(0)
+                                    .setName(getChildText(r, 1).split(" - ")[0])
+                                    .addBodyId(parseBodyId(getChildText(r, 1).split(" - ")[1]));
+                        }
 
-                    // star in 'P' column marks winner
-                    if (r.childNodeSize() >= 13 && !r.child(12).children().isEmpty()) {
-                        bid.setIsWinning(Boolean.TRUE.toString());
-                    }
-                });
+                        if (r.childNode(priceColumnNumber).childNodeSize() != 0) {
+                            bid.setPrice(parsePrice(r.childNode(priceColumnNumber).childNode(0).toString()));
+                        }
+                        if (r.childNode(reasonColumnNumber).childNodeSize() != 0) {
+                            bid.setDisqualificationReason(r.childNode(reasonColumnNumber).childNode(0).toString());
+                        }
+
+                        // star in 'P' column marks winner
+                        if (pColumnNumber != 0 && r.childNode(pColumnNumber).childNodeSize() != 0) {
+                            bid.setIsWinning(Boolean.TRUE.toString());
+                        }
+
+                    });
 
             return t;
         }),
@@ -149,8 +196,8 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
             }
 
             ParsedBid winningBid = Optional.ofNullable(lot.getBids()).orElse(Collections.emptyList()).stream()
-                .filter(n -> Boolean.TRUE.equals(n.getIsWinning()))
-                .findFirst().orElse(null);
+                    .filter(n -> Boolean.TRUE.equals(n.getIsWinning()))
+                    .findFirst().orElse(null);
 
             ParsedBody winner = winningBid != null ? winningBid.getBidders().get(0) : null;
 
@@ -167,9 +214,12 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
                         ParsedAddress address = new ParsedAddress().setRawAddress(rawAddress);
 
                         Matcher m = Pattern.compile("(?<street>[^\\-]+) \\- (?<city>[^\\-]+) \\- (?<state>[^\\-]+)")
-                            .matcher(rawAddress);
+                                .matcher(rawAddress);
                         if (m.find()) {
-                            winner.setAddress(address.setStreet(m.group("street")).setCity(m.group("city")).setState(m.group("state")));
+                            winner
+                                    .setAddress(address.setStreet(m.group("street"))
+                                            .setCity(m.group("city"))
+                                            .setState(m.group("state")));
                         }
                     }
 
@@ -210,6 +260,9 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
                     case "Penetapan Pemenang":
                         lot.setAwardDecisionDate(date);
                         break;
+                    case "Pengumuman Pemenang":
+                        t.getPublications().get(0).setPublicationDate(date);
+                        break;
                     case "Penandatanganan Kontrak":
                         lot.setContractSignatureDate(date);
                         break;
@@ -217,7 +270,6 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
                         continue;
                 }
             }
-
             return t;
         });
 
@@ -226,10 +278,8 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
         private final BiFunction<Document, ParsedTender, ParsedTender> parser;
 
         /**
-         * @param name
-         *      name of tab used in url
-         * @param parser
-         *      parser which updates input tender with snippet specific data
+         * @param name   name of tab used in url
+         * @param parser parser which updates input tender with snippet specific data
          */
         LPSESnippetType(final String name, final BiFunction<Document, ParsedTender, ParsedTender> parser) {
             this.name = name;
@@ -237,8 +287,7 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
         }
 
         /**
-         * @param url
-         *      url of the snippet
+         * @param url url of the snippet
          * @return appropriate type
          */
         public static final LPSESnippetType fromUrl(final String url) {
@@ -254,10 +303,8 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
         }
 
         /**
-         * @param document
-         *      document to be parsed
-         * @param tender
-         *      parsed tender
+         * @param document document to be parsed
+         * @param tender   parsed tender
          * @return parsed tender
          */
         public final ParsedTender parse(final Document document, final ParsedTender tender) {
@@ -266,10 +313,8 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
     }
 
     /**
-     * @param parent
-     *      parsed parent element
-     * @param n
-     *      child index
+     * @param parent parsed parent element
+     * @param n      child index
      * @return text of the n-th child's content or NULL if the given ingex is out of bounds.
      */
     private static String getChildText(final Element parent, final int n) {
@@ -279,14 +324,13 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
 
         try {
             return parent.child(n).text();
-        } catch(IndexOutOfBoundsException ex) {
+        } catch (IndexOutOfBoundsException ex) {
             return null;
         }
     }
 
     /**
-     * @param input
-     *      string to be parsed
+     * @param input string to be parsed
      * @return parsed price or null
      */
     private static ParsedPrice parsePrice(final String input) {
@@ -303,8 +347,7 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
     }
 
     /**
-     * @param input
-     *      string to be parsed
+     * @param input string to be parsed
      * @return parsed body identifier or null
      */
     private static BodyIdentifier parseBodyId(final String input) {
@@ -312,10 +355,10 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
             return null;
         }
 
-       return new BodyIdentifier()
-            .setId(input)
-            .setScope(BodyIdentifier.Scope.ID)
-            .setType(BodyIdentifier.Type.ORGANIZATION_ID);
+        return new BodyIdentifier()
+                .setId(input)
+                .setScope(BodyIdentifier.Scope.ID)
+                .setType(BodyIdentifier.Type.ORGANIZATION_ID);
     }
 
     @Override
@@ -339,16 +382,37 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
         }
 
         ParsedTender tender = new ParsedTender()
-            // lot initialization because of easier parsing, no test of lot existence is needed
-            .addLot(new ParsedTenderLot());
+                // lot and publication initialization because of easier parsing, no test of existence is needed
+                .addLot(new ParsedTenderLot())
+                .addPublication(new ParsedPublication());
 
-        for (Map.Entry<LPSESnippetType, Document> s : snippets.entrySet()) {
-            tender = s.getKey().parse(s.getValue(), tender);
-            logger.debug("Snippet {} parsed", s.getKey().name());
-        }
+
+        tender = snippets.get(LPSESnippetType.NOTICE) == null ? tender : LPSESnippetType.NOTICE.parse(
+                snippets.get(LPSESnippetType.NOTICE), tender);
+        logger.debug("Snippet {} parsed", LPSESnippetType.NOTICE.name());
+
+        tender = snippets.get(LPSESnippetType.PARTICIPANTS) == null ? tender : LPSESnippetType.PARTICIPANTS.parse(
+                snippets.get(LPSESnippetType.PARTICIPANTS), tender);
+        logger.debug("Snippet {} parsed", LPSESnippetType.PARTICIPANTS.name());
+
+        tender = snippets.get(LPSESnippetType.RESULTS) == null ? tender : LPSESnippetType.RESULTS.parse(
+                snippets.get(LPSESnippetType.RESULTS), tender);
+        logger.debug("Snippet {} parsed", LPSESnippetType.RESULTS.name());
+
+        tender = snippets.get(LPSESnippetType.PLAN) == null ? tender : LPSESnippetType.PLAN.parse(
+                snippets.get(LPSESnippetType.PLAN), tender);
+        logger.debug("Snippet {} parsed", LPSESnippetType.PLAN.name());
+
+        tender = snippets.get(LPSESnippetType.WINNER) == null ? tender : LPSESnippetType.WINNER.parse(
+                snippets.get(LPSESnippetType.WINNER), tender);
+        logger.debug("Snippet {} parsed", LPSESnippetType.WINNER.name());
+
+        tender = snippets.get(LPSESnippetType.WINNER_CONTRACT) == null ? tender : LPSESnippetType.WINNER_CONTRACT.parse(
+                snippets.get(LPSESnippetType.WINNER_CONTRACT), tender);
+        logger.debug("Snippet {} parsed", LPSESnippetType.WINNER_CONTRACT.name());
 
         // set URL of included publication (parsed in NOTICE snippet parser)
-        tender.getPublications().get(0).setHumanReadableUrl(url);
+        tender.getPublications().forEach(a -> a.setHumanReadableUrl(url));
 
         return Collections.singletonList(tender);
     }
@@ -359,7 +423,7 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
     }
 
     @Override
-    protected final String countryOfOrigin(final ParsedTender parsed, final RawData raw){
+    protected final String countryOfOrigin(final ParsedTender parsed, final RawData raw) {
         return "ID";
     }
 }

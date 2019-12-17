@@ -11,8 +11,29 @@ import java.util.List;
 public interface MasterTenderOpentenderDAO extends MasterTenderDAO<MasterTender> {
 
     /**
-     * Returns objects which has been modified after timestamp by certain
-     * source. The result is paged with 1000 records per page.
+     * Returns objects which has been modified after timestamp by certain source. The result is paged with {@code pageSize} records per
+     * page.
+     *
+     * @param timestamp
+     *            objects modified after this timestamp will be returned
+     * @param createdBy
+     *            "author" of the change
+     * @param countryCode
+     *            country code
+     * @param page
+     *            order of the page in the result (for first page set 0)
+     * @param opentender
+     *          whether returns only opentender records (tender.metaData.opentender = true)
+     * @param pageSize
+     *      page size
+     * @return set of objects modified after timestamp
+     */
+    List<MasterTender> getModifiedAfter(LocalDateTime timestamp, String createdBy, String countryCode, Integer page, boolean opentender,
+                                        Integer pageSize);
+
+    /**
+     * Same as {@link MasterTenderOpentenderDAO#getModifiedAfter(LocalDateTime, String, String, Integer, boolean, Integer)} but uses
+     * default page size.
      *
      * @param timestamp
      *            objects modified after this timestamp will be returned

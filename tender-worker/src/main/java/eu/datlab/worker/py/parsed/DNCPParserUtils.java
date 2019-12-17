@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
 
 import eu.dl.dataaccess.dto.parsed.ParsedUnitPrice;
 import org.apache.commons.collections.IteratorUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

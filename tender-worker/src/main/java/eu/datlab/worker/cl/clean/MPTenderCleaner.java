@@ -30,6 +30,8 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.NumberFormat;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -48,22 +50,27 @@ public class MPTenderCleaner extends BaseDatlabTenderCleaner {
     private static final Locale LOCALE = new Locale("cl");
 
     private static final List<NumberFormat> NUMBER_FORMATS = new ArrayList<>();
-
     static {
-        DecimalFormatSymbols formatSymbols = new DecimalFormatSymbols(new Locale("cs_CZ"));
+        DecimalFormatSymbols formatSymbols = new DecimalFormatSymbols(LOCALE);
         formatSymbols.setDecimalSeparator(',');
         formatSymbols.setGroupingSeparator('.');
         NUMBER_FORMATS.add(new DecimalFormat("#,##0.###", formatSymbols));
-        NUMBER_FORMATS.add(NumberFormat.getInstance(LOCALE));
     }
 
-    private static final List<DateTimeFormatter> DATE_FORMATTERS = Arrays.asList(
-            DateTimeFormatter.ofPattern("dd-MM-yyyy", LOCALE),
-            DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss", LOCALE));
-
     private static final List<DateTimeFormatter> DATETIME_FORMATTERS = Arrays.asList(
-            DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss", LOCALE));
-
+        new DateTimeFormatterBuilder()
+            .appendPattern("d-M-yyyy[ H:m[:s]]")
+            .parseDefaulting(ChronoField.HOUR_OF_DAY, 0)
+            .parseDefaulting(ChronoField.MINUTE_OF_HOUR, 0)
+            .parseDefaulting(ChronoField.SECOND_OF_MINUTE, 0)
+            .toFormatter(LOCALE),
+        new DateTimeFormatterBuilder()
+            .appendPattern("d/M/yyyy[ H:m[:s]]")
+            .parseDefaulting(ChronoField.HOUR_OF_DAY, 0)
+            .parseDefaulting(ChronoField.MINUTE_OF_HOUR, 0)
+            .parseDefaulting(ChronoField.SECOND_OF_MINUTE, 0)
+            .toFormatter(LOCALE)
+    );
     @Override
     public final String getVersion() {
         return VERSION;
@@ -111,8 +118,7 @@ public class MPTenderCleaner extends BaseDatlabTenderCleaner {
     }
 
     @Override
-    protected final CleanTender postProcessSourceSpecificRules(final ParsedTender parsedTender,
-                                                               final CleanTender cleanTender) {
+    protected final CleanTender postProcessSourceSpecificRules(final ParsedTender parsedTender, final CleanTender cleanTender) {
         if (cleanTender.getLots() != null) {
             for (CleanTenderLot lot : cleanTender.getLots()) {
                 if (lot.getBids() != null) {
@@ -138,19 +144,18 @@ public class MPTenderCleaner extends BaseDatlabTenderCleaner {
     @Override
     protected final void registerSpecificPlugins() {
         pluginRegistry
-                .registerPlugin("date", new DatePlugin(DATE_FORMATTERS))
-                .registerPlugin("datetime", new DateTimePlugin(DATETIME_FORMATTERS))
-                .registerPlugin("bodies", new BodyPlugin(null, null, countryMapping()))
-                .registerPlugin("address", new AddressPlugin())
-                .registerPlugin("lots", new LotPlugin(NUMBER_FORMATS, DATE_FORMATTERS, new HashMap<>()))
-                .registerPlugin("awardCriteria", new AwardCriteriaPlugin(NUMBER_FORMATS))
-                .registerPlugin("publications",
-                        new PublicationPlugin(NUMBER_FORMATS, DATE_FORMATTERS, formTypeMapping()))
-                .registerPlugin("procedureType", new TenderProcedureTypePlugin(procedureTypeMapping(), null))
-                .registerPlugin("prices", new PricePlugin(NUMBER_FORMATS))
-                .registerPlugin("corrections", new CorrigendumPlugin(NUMBER_FORMATS, DATE_FORMATTERS))
-                .registerPlugin("tenderSize", new TenderSizePlugin(null))
-                .registerPlugin("fundings", new FundingsPlugin(NUMBER_FORMATS));
+            .registerPlugin("date", new DatePlugin(DATETIME_FORMATTERS))
+            .registerPlugin("datetime", new DateTimePlugin(DATETIME_FORMATTERS))
+            .registerPlugin("bodies", new BodyPlugin(null, null, countryMapping()))
+            .registerPlugin("address", new AddressPlugin())
+            .registerPlugin("lots", new LotPlugin(NUMBER_FORMATS, DATETIME_FORMATTERS, new HashMap<>()))
+            .registerPlugin("awardCriteria", new AwardCriteriaPlugin(NUMBER_FORMATS))
+            .registerPlugin("publications", new PublicationPlugin(NUMBER_FORMATS, DATETIME_FORMATTERS, formTypeMapping()))
+            .registerPlugin("procedureType", new TenderProcedureTypePlugin(procedureTypeMapping(), null))
+            .registerPlugin("prices", new PricePlugin(NUMBER_FORMATS))
+            .registerPlugin("corrections", new CorrigendumPlugin(NUMBER_FORMATS, DATETIME_FORMATTERS))
+            .registerPlugin("tenderSize", new TenderSizePlugin(null))
+            .registerPlugin("fundings", new FundingsPlugin(NUMBER_FORMATS));
     }
 
     /**
@@ -170,8 +175,7 @@ public class MPTenderCleaner extends BaseDatlabTenderCleaner {
      */
     private Map<Enum, List<String>> formTypeMapping() {
         final Map<Enum, List<String>> mapping = new HashMap<>();
-        mapping.put(PublicationFormType.PRIOR_INFORMATION_NOTICE, Arrays.asList("Fecha de Publicación"));
-        mapping.put(PublicationFormType.CONTRACT_NOTICE, Arrays.asList("Publicada", "Cerrada"));
+        mapping.put(PublicationFormType.CONTRACT_NOTICE, Arrays.asList("Publicada", "Cerrada", "Fecha de Publicación"));
         mapping.put(PublicationFormType.CONTRACT_AWARD, Arrays.asList("Adjudicada", "Autorizada para Adjudicación", "Enviada a Autorizar " +
                 "para Adjudicación", "Readjudicada"));
         mapping.put(PublicationFormType.CONTRACT_CANCELLATION, Arrays.asList("Autorizada para Deserción", "Desierta (o art. 3 " +
@@ -202,6 +206,15 @@ public class MPTenderCleaner extends BaseDatlabTenderCleaner {
             return null;
         }
 
-        return currency.replace("$", "CLP");
+        return currency
+            .replace("US$", "USD")
+            .replace("$", "CLP")
+            .replace("€", "EUR")
+            .replace("Peso Chileno", "CLP")
+            .replace("Dólar Americano", "USD")
+            .replace("Euro", "EUR")
+            .replace("Unidad de Fomento", "CLF")
+            .replace("UF", "CLF")
+            .replace("Unidad Tributaria Mensual", "UTM");
     }
 }

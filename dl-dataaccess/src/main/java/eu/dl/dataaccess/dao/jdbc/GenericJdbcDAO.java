@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectWriter;
 import eu.dl.core.UnrecoverableException;
 import eu.dl.dataaccess.dao.GenericDAO;
 import eu.dl.dataaccess.dto.StorableDTO;
-import eu.dl.dataaccess.dto.codetables.PublicationFormType;
 
 import java.io.IOException;
 import java.sql.PreparedStatement;
@@ -12,7 +11,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -34,17 +32,18 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
      *
      * @param countryCode country code
      * @param page page
+     * @param pageSize page size
      * @return page with tenders
      */
-    public final List<T> getByCountry(final String countryCode, final Integer page) {
+    public final List<T> getByCountry(final String countryCode, final Integer page, final Integer pageSize) {
         try {
             PreparedStatement statement = connection.prepareStatement(
                     "SELECT * FROM " + getTableWithSchema() + " WHERE data ->> 'country' = '" +
                             sanitizeForJsonString(countryCode) + "' ORDER BY modified ASC LIMIT ? " +
                             "OFFSET ?");
 
-            statement.setInt(1, PAGE_SIZE);
-            statement.setInt(2, page * PAGE_SIZE);
+            statement.setInt(1, pageSize);
+            statement.setInt(2, page * pageSize);
             ResultSet rs = statement.executeQuery();
 
             List<T> result = new ArrayList<T>();
@@ -64,22 +63,34 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
     }
 
     /**
+     * Gets tenders for a specific country. Uses default page size.
+     *
+     * @param countryCode country code
+     * @param page page
+     * @return page with tenders
+     */
+    public final List<T> getByCountry(final String countryCode, final Integer page) {
+        return getByCountry(countryCode, page, getPageSize());
+    }
+
+    /**
      * Gets tenders for a specific country and source.
      *
      * @param countryCode country code
      * @param page page
      * @param createdBy createdBy
+     * @param pageSize page size
      * @return page with tenders
      */
-    public final List<T> getByCountry(final String countryCode, final Integer page, final String createdBy) {
+    public final List<T> getByCountry(final String countryCode, final Integer page, final String createdBy, final Integer pageSize) {
         try {
             PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + getTableWithSchema()
                 + " WHERE data ->> 'country' = '" + sanitizeForJsonString(countryCode) + "' AND createdby = ?"
                 + " ORDER BY modified ASC LIMIT ? OFFSET ?");
 
             statement.setString(1, createdBy);
-            statement.setInt(2, PAGE_SIZE);
-            statement.setInt(3, page * PAGE_SIZE);
+            statement.setInt(2, pageSize);
+            statement.setInt(3, page * pageSize);
             ResultSet rs = statement.executeQuery();
 
             List<T> result = new ArrayList<>();
@@ -97,6 +108,17 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
         }
     }
 
+    /**
+     * Gets tenders for a specific country and source. Uses default page size.
+     *
+     * @param countryCode country code
+     * @param page page
+     * @param createdBy createdBy
+     * @return page with tenders
+     */
+    public final List<T> getByCountry(final String countryCode, final Integer page, final String createdBy) {
+        return getByCountry(countryCode, page, createdBy, getPageSize());
+    }
 
     /**
      * Returns items with the group id.
@@ -229,6 +251,7 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
                     if (rs.next()) {
                         t.setId(rs.getString(1));
                     }
+                    rs.close();
                 } else {
                     // update
                     statement = connection.prepareStatement(
@@ -249,6 +272,9 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
                     // execute insert ad get primary key returned
                     statement.executeUpdate();
                 }
+
+                statement.close();
+
                 return t.getId();
             } catch (SQLException e) {
                 logger.error("Unable to perform query, because of {}", e);
@@ -415,10 +441,11 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
      *
      * @param page
      * 		   no. of page (from 0)
-     * 
+     * @param pageSize
+     *      page size
      * @return list of objects with the same hash
      */
-    public final List<T> getMine(final Integer page) {
+    public final List<T> getMine(final Integer page, final Integer pageSize) {
         try {
             PreparedStatement statement = connection.prepareStatement(
                     "SELECT * FROM " + getTableWithSchema()
@@ -428,8 +455,8 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
 
             statement.setString(1, workerName);
             statement.setString(2, workerVersion);
-            statement.setInt(3, PAGE_SIZE);
-            statement.setInt(4, page * PAGE_SIZE);
+            statement.setInt(3, pageSize);
+            statement.setInt(4, page * pageSize);
             
             ResultSet rs = statement.executeQuery();
 
@@ -448,6 +475,19 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
             throw new UnrecoverableException("Unable to perform query.", e);
         }
     }
+
+    /**
+     * Returns objects with which have been stored by the
+     * particular version of the matcher (or its relative). Uses default page size.
+     *
+     * @param page
+     * 		   no. of page (from 0)
+     * @return list of objects with the same hash
+     */
+    public final List<T> getMine(final Integer page) {
+        return getMine(page, getPageSize());
+    }
+
 
     /**
      * Returns objects with the same hash which have been stored by specified workers (and versions of workers).
@@ -489,15 +529,15 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
     }
 
     @Override
-    public final List<T> getModifiedAfter(final LocalDateTime timestamp, final Integer page) {
+    public final List<T> getModifiedAfter(final LocalDateTime timestamp, final Integer page, final Integer pageSize) {
         try {
             PreparedStatement statement = connection.prepareStatement(
                     "SELECT * FROM " + getTableWithSchema() + " WHERE modified > ? ORDER BY modified ASC LIMIT ? " +
                             "OFFSET ?");
 
             statement.setTimestamp(1, Timestamp.valueOf(timestamp));
-            statement.setInt(2, PAGE_SIZE);
-            statement.setInt(3, page * PAGE_SIZE);
+            statement.setInt(2, pageSize);
+            statement.setInt(3, page * pageSize);
 
             ResultSet rs = statement.executeQuery();
 
@@ -518,7 +558,13 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
     }
 
     @Override
-    public final List<T> getModifiedAfter(final LocalDateTime timestamp, final String modifiedBy, final Integer page) {
+    public final List<T> getModifiedAfter(final LocalDateTime timestamp, final Integer page) {
+        return getModifiedAfter(timestamp, page, getPageSize());
+    }
+
+    @Override
+    public final List<T> getModifiedAfter(final LocalDateTime timestamp, final String modifiedBy, final Integer page,
+                                          final Integer pageSize) {
         try {
             PreparedStatement statement = connection.prepareStatement(
                     "SELECT * FROM " + getTableWithSchema() + " WHERE modified > ? AND createdby = ? ORDER BY " +
@@ -526,8 +572,8 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
 
             statement.setTimestamp(1, Timestamp.valueOf(timestamp));
             statement.setString(2, modifiedBy);
-            statement.setInt(3, PAGE_SIZE);
-            statement.setInt(4, page * PAGE_SIZE);
+            statement.setInt(3, pageSize);
+            statement.setInt(4, page * pageSize);
 
             ResultSet rs = statement.executeQuery();
 
@@ -546,12 +592,14 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
             throw new UnrecoverableException("Unable to perform query.", e);
         }
     }
+    @Override
+    public final List<T> getModifiedAfter(final LocalDateTime timestamp, final String modifiedBy, final Integer page) {
+        return getModifiedAfter(timestamp, modifiedBy, page, getPageSize());
+    }
 
     @Override
-    public final List<T> getModifiedAfter(final LocalDateTime timestamp,
-                                         final String createdBy,
-                                         final String countryCode,
-                                         final Integer page) {
+    public final List<T> getModifiedAfter(final LocalDateTime timestamp, final String createdBy, final String countryCode,
+                                          final Integer page, final Integer pageSize) {
         try {
             String query = "SELECT * FROM " + getTableWithSchema() + " WHERE modified > ? ";
 
@@ -569,8 +617,8 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
             PreparedStatement statement = connection.prepareStatement(query);
 
             statement.setTimestamp(1, Timestamp.valueOf(timestamp));
-            statement.setInt(2, PAGE_SIZE);
-            statement.setInt(3, page * PAGE_SIZE);
+            statement.setInt(2, pageSize);
+            statement.setInt(3, page * pageSize);
 
             ResultSet rs = statement.executeQuery();
 
@@ -588,6 +636,12 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
             logger.error("Unable to perform query, because of of {}", e);
             throw new UnrecoverableException("Unable to perform query.", e);
         }
+    }
+
+    @Override
+    public final List<T> getModifiedAfter(final LocalDateTime timestamp, final String createdBy, final String countryCode,
+                                          final Integer page) {
+        return getModifiedAfter(timestamp, createdBy, countryCode, page, getPageSize());
     }
 
     @Override
@@ -691,6 +745,7 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
             PreparedStatement st = connection.prepareStatement("SET enable_indexscan TO 'off';");
 
             st.executeUpdate();
+            st.close();
         } catch (Exception e) {
             logger.error("Unable to perform query, because of of {}", e);
             throw new UnrecoverableException("Unable to perform query.", e);
@@ -708,6 +763,7 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
             PreparedStatement st = connection.prepareStatement("SET enable_indexscan TO 'on';");
 
             st.executeUpdate();
+            st.close();
         } catch (Exception e) {
             logger.error("Unable to perform query, because of of {}", e);
             throw new UnrecoverableException("Unable to perform query.", e);
@@ -725,6 +781,7 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
             PreparedStatement st = connection.prepareStatement("SET enable_seqscan TO 'off';");
 
             st.executeUpdate();
+            st.close();
         } catch (Exception e) {
             logger.error("Unable to perform query, because of of {}", e);
             throw new UnrecoverableException("Unable to perform query.", e);
@@ -742,6 +799,7 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
             PreparedStatement st = connection.prepareStatement("SET enable_seqscan TO 'on';");
 
             st.executeUpdate();
+            st.close();
         } catch (Exception e) {
             logger.error("Unable to perform query, because of of {}", e);
             throw new UnrecoverableException("Unable to perform query.", e);
@@ -829,131 +887,6 @@ public abstract class GenericJdbcDAO<T extends StorableDTO> extends BaseJdbcDAO<
             statement.close();
 
             return result;
-        } catch (Exception e) {
-            logger.error("Unable to perform query, because of of {}", e);
-            throw new UnrecoverableException("Unable to perform query.", e);
-        }
-    }
-
-    /**
-     * Returns all tenders for the given buyer group id which have the first included publication of the given
-     * {@code formType} published between {@code from} and {@code to} dates.
-     *
-     * @param buyerGroupId
-     *      buyer group id
-     * @param from
-     *      from date
-     * @param to
-     *      to date
-     * @param formType
-     *      form type of included publication
-     * @return list of buyer's tenders
-     */
-    public final List<T> getBuyerTendersInPeriod(final String buyerGroupId, final LocalDate from, final LocalDate to,
-        final PublicationFormType formType) {
-
-        try {
-            PreparedStatement statement = connection.prepareStatement(
-                "WITH rows AS ("
-                    + " SELECT mt.*, min(p->>'publicationDate') AS first_published"
-                    + " FROM " + getTableWithSchema() + " mt, jsonb_array_elements(mt.data#>'{publications}') p"
-                    + " WHERE data @> '{\"buyers\": [{\"groupId\": \"" + buyerGroupId + "\"}]}'"
-                    + " AND (p->>'isIncluded')::boolean"
-                    + " AND p @> '{\"formType\":\"" + formType + "\"}'"
-                    + " GROUP BY mt.id)"
-                + " SELECT id, data, created, createdby, createdbyversion, modified, modifiedby, modifiedbyversion"
-                + " FROM rows"
-                + " WHERE first_published BETWEEN ? AND ?");
-
-            statement.setString(1, from.toString());
-            statement.setString(2, to.toString());
-
-            ResultSet rs = statement.executeQuery();
-            
-            List<T> result = new ArrayList<>();
-            while (rs.next()) {                
-                result.add(createFromResultSet(rs));                
-            }
-
-            rs.close();
-            statement.close();
-
-            return result;
-        } catch (Exception e) {
-            logger.error("Unable to perform query, because of of {}", e);
-            throw new UnrecoverableException("Unable to perform query.", e);
-        }
-    }
-
-    /**
-     * Returns median of the given CPV for tenders of the given type published in the given period.
-     *
-     * @param createdBy
-     *      worker name
-     * @param from
-     *      start of the period
-     * @param to
-     *      end of the period
-     * @param formType
-     *      form type of included publication
-     * @param cpv
-     *      CPV for that the median to be calculated
-     * @return array where index 0 holds median value for the given CPV and index 1 holds number of tenders used for median calculation
-     */
-    public final int[] getCPVMedianInPeriod(final List<String> createdBy, final LocalDate from, final LocalDate to,
-        final PublicationFormType formType, final String cpv) {
-
-        if (createdBy == null || createdBy.isEmpty() || cpv == null) {
-            return new int[]{0, 0};
-        }
-        
-        try {
-            String createdByRestriction = String.join(" OR ", createdBy.stream().map(n -> "mt.createdBy = '" + n + "'")
-                .collect(Collectors.toList()));
-
-            PreparedStatement statement = connection.prepareStatement(
-                // select suited tenders
-                    "WITH"
-                    + " tenders AS ("
-                        + "	SELECT DISTINCT mt.*"
-                        + "	FROM " + getTableWithSchema() + " mt, jsonb_array_elements(mt.data#>'{publications}') p,"
-                        + " jsonb_array_elements(mt.data#>'{cpvs}') c"
-                        + "	WHERE (" + createdByRestriction + ")"
-                            + " AND mt.data->>'procedureType' <> 'NEGOTIATED_WITHOUT_PUBLICATION'"
-                            + " AND (p->>'isIncluded')::boolean"
-                            + " AND p@>'{\"formType\":\"" + formType + "\"}'"
-                            + " AND p->>'publicationDate' BETWEEN ? AND ?"
-                            + " AND (c->>'isMain')::boolean AND c->>'code' LIKE '" + cpv.replaceAll("\\-[0-9]$", "") + "%'"
-                    + "),"
-                    // select lot.bidsCount for each tender.lot and sort rows by count
-                    + " bids AS ("
-                        + " SELECT (l->>'bidsCount')::int AS bids_cnt, mt.id AS tender_id"
-                        + " FROM tenders mt, jsonb_array_elements(mt.data#>'{lots}') l"
-                        + "	WHERE l->>'bidsCount' IS NOT NULL"
-                        + "	ORDER BY bids_cnt"
-                    + "),"
-                    // -- median calculation
-                    + " counts AS ("
-                        + "	SELECT array_agg(bids_cnt) AS bids_cnt, count(DISTINCT tender_id) AS tenders_cnt"
-                        + "	FROM bids"
-                    + ")"
-                    + " SELECT CASE WHEN array_length(bids_cnt, 1) = 0 THEN 0"
-                        + " WHEN array_length(bids_cnt, 1) % 2 = 0 THEN bids_cnt[array_length(bids_cnt, 1)/2]"
-                        + " ELSE bids_cnt[(array_length(bids_cnt, 1)+1)/2] END AS median,"
-                    + " tenders_cnt"
-                    + " FROM counts");
-
-            statement.setString(1, from.toString());
-            statement.setString(2, to.toString());
-
-            ResultSet rs = statement.executeQuery();
-            int[] median;
-            median = rs.next() ? new int[]{rs.getInt("median"), rs.getInt("tenders_cnt")} : new int[]{0, 0};
-
-            rs.close();
-            statement.close();
-
-            return median;
         } catch (Exception e) {
             logger.error("Unable to perform query, because of of {}", e);
             throw new UnrecoverableException("Unable to perform query.", e);

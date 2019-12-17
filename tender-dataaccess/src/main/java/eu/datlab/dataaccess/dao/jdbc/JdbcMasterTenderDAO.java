@@ -31,7 +31,7 @@ public class JdbcMasterTenderDAO extends GenericJdbcDAO<MasterTender> implements
 
     @Override
     public final List<MasterTender> getModifiedAfter(final LocalDateTime timestamp, final String createdBy, final String countryCode,
-                                                     final Integer page, final boolean opentender) {
+                                                     final Integer page, final boolean opentender, final Integer pageSize) {
         try {
             String query = "SELECT * FROM " + getTableWithSchema() + " WHERE modified > ?";
 
@@ -53,8 +53,8 @@ public class JdbcMasterTenderDAO extends GenericJdbcDAO<MasterTender> implements
             PreparedStatement statement = connection.prepareStatement(query);
 
             statement.setTimestamp(1, Timestamp.valueOf(timestamp));
-            statement.setInt(2, PAGE_SIZE);
-            statement.setInt(3, page * PAGE_SIZE);
+            statement.setInt(2, pageSize);
+            statement.setInt(3, page * pageSize);
 
             ResultSet rs = statement.executeQuery();
 
@@ -72,5 +72,11 @@ public class JdbcMasterTenderDAO extends GenericJdbcDAO<MasterTender> implements
             logger.error("Unable to perform query, because of of {}", e);
             throw new UnrecoverableException("Unable to perform query.", e);
         }
+    }
+
+    @Override
+    public final List<MasterTender> getModifiedAfter(final LocalDateTime timestamp, final String createdBy, final String countryCode,
+                                                     final Integer page, final boolean opentender) {
+        return getModifiedAfter(timestamp, createdBy, countryCode, page, opentender, getPageSize());
     }
 }

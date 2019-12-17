@@ -59,7 +59,7 @@ public final class ContractImplementationUtils {
                                             masterBid.getPayments(), bid.getPayments()));
                                 }
 
-                                tender.setPublications(addPublications(getIsIncludedPublications(tender),
+                                tender.setPublications(addPublications(tender.getPublications(),
                                         getIsIncludedPublications(contractImplementation)));
 
                                 break;

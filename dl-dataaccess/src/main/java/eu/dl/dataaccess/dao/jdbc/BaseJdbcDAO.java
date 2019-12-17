@@ -3,11 +3,10 @@ package eu.dl.dataaccess.dao.jdbc;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import eu.dl.core.config.Config;
 import eu.dl.dataaccess.dao.BaseDAO;
-import org.apache.commons.lang3.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,9 +41,14 @@ public abstract class BaseJdbcDAO<T> implements BaseDAO<T> {
     protected final String schema;
 
     /**
+     * Default page size.
+     */
+    public static final Integer DEFAULT_PAGE_SIZE = 10000;
+
+    /**
      * Page size used in paged methods.
      */
-    public static final Integer PAGE_SIZE = 10000;
+    protected int pageSize;
 
     /**
      * Initializes connection etc.
@@ -61,9 +65,11 @@ public abstract class BaseJdbcDAO<T> implements BaseDAO<T> {
         mapper.registerModule(new JavaTimeModule());
         mapper.setDateFormat(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"));
         mapper.setSerializationInclusion(Include.NON_NULL);
-        mapper.configure(SerializationFeature.WRITE_NULL_MAP_VALUES, false);
 
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+        Integer pageSizeParam = config.getParamValueAs("jdbc.pageSize", Integer::valueOf);
+        pageSize = pageSizeParam != null ? pageSizeParam : DEFAULT_PAGE_SIZE;
     }
 
     /**
@@ -155,5 +161,12 @@ public abstract class BaseJdbcDAO<T> implements BaseDAO<T> {
         		result = StringEscapeUtils.escapeJson(result);
         }
         return result;
+    }
+
+    /**
+     * @return page size
+     */
+    public final int getPageSize() {
+        return pageSize;
     }
 }

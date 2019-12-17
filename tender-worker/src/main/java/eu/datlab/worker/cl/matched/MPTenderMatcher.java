@@ -1,6 +1,7 @@
 package eu.datlab.worker.cl.matched;
 
 import eu.datlab.worker.matched.BaseDatlabTenderMatcher;
+import eu.datlab.worker.matched.TenderPublicationSourceIdsAndPublicationDatesMatchingPlugin;
 import eu.dl.dataaccess.dto.matched.MatchedBody;
 import eu.dl.dataaccess.dto.matched.MatchedTender;
 import eu.dl.dataaccess.utils.TenderUtils;
@@ -28,6 +29,8 @@ public class MPTenderMatcher extends BaseDatlabTenderMatcher {
 
     @Override
     protected final void registerTenderPlugins() {
+        tenderPluginRegistry.registerPlugin("mpTender",
+            new TenderPublicationSourceIdsAndPublicationDatesMatchingPlugin(matchedTenderDao, false));
     }
 
     @Override

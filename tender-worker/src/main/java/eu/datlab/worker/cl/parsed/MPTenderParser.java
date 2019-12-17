@@ -18,7 +18,6 @@ import eu.dl.dataaccess.dto.parsed.ParsedTenderLot;
 import eu.dl.dataaccess.dto.parsed.ParsedUnitPrice;
 import eu.dl.dataaccess.dto.raw.RawData;
 import eu.dl.worker.utils.jsoup.JsoupUtils;
-import org.bouncycastle.util.encoders.Hex;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -32,12 +31,19 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 
 /**
  * Parser for Chile.
  */
 public final class MPTenderParser extends BaseDatlabTenderParser {
+    private static final Pattern BIDDER_COMMON_REGEX = Pattern.compile("^(?<id>\\d{1,}\\.\\d{3}\\.\\d{3}-[a-zA-Z0-9])( (?<name>.+))?");
+    private static final Pattern BIDDER_TMI_REGEX = Pattern.compile("^(?<id>TMI \\d+ NK)( (?<name>.+))?");
+    private static final Pattern BIDDER_DUMB_REGEX = Pattern.compile("^(?<id>[^ ]+)( (?<name>.+))?");
+
     @Override
     protected String countryOfOrigin(final ParsedTender parsed, final RawData raw) {
         return "CL";
@@ -61,74 +67,71 @@ public final class MPTenderParser extends BaseDatlabTenderParser {
         final ParsedTender parsedTender = new ParsedTender();
 
         parsedTender
-                .setTitle(getById("lblFicha1Nombre", doc))
-                .setCountry("CL")
-                .setDescription(getById("lblFicha1Descripcion", doc))
-                .setProcedureType(getById("lblFicha1Convocatoria", doc))
-                .setBidDeadline(getById("lblFicha3Cierre", doc))
-                .addPublication(new ParsedPublication()
-                        .setSourceId(getById("lblNumLicitacion", doc))
-                        .setSource(PublicationSources.CL_MERCADO)
-                        .setHumanReadableUrl(raw.getSourceUrl().toString())
-                        .setPublicationDate(getById("lblFicha3Adjudicacion", doc))
-                        .setSourceFormType(getById("lblFicha1Estado", doc))
-                        .setIsIncluded(true)
+            .setTitle(getById("lblFicha1Nombre", doc))
+            .setCountry("CL")
+            .setDescription(getById("lblFicha1Descripcion", doc))
+            .setProcedureType(getById("lblFicha1Convocatoria", doc))
+            .setBidDeadline(getById("lblFicha3Cierre", doc))
+            .addPublication(new ParsedPublication()
+                .setSourceId(getById("lblNumLicitacion", doc))
+                .setSource(PublicationSources.CL_MERCADO)
+                .setHumanReadableUrl(raw.getSourceUrl().toString())
+                .setPublicationDate(getById("lblTitlePorcDateDesc", adjudicacion))
+                .setSourceFormType("Adjudicada")
+                .setIsIncluded(true)
+            )
+            .addPublication(new ParsedPublication()
+                .setIsIncluded(false)
+                .setSource(PublicationSources.CL_MERCADO)
+                .setSourceFormType("Fecha de Publicación")
+                .setPublicationDate(getById("lblFicha3Publicacion", doc))
+            )
+            .addPublication(new ParsedPublication()
+                .setIsIncluded(false)
+                .setSource(PublicationSources.CL_MERCADO)
+                .setSourceFormType("Fecha de Cierre")
+                .setPublicationDate(getById("lblFicha3Cierre", doc))
+            )
+            .addBuyer(new ParsedBody()
+                .setName(getById("lblFicha2Razon", doc))
+                .addMainActivity(getById("lblFicha2Unidad", doc))
+                .addBodyId(new BodyIdentifier()
+                    .setId(getById("lblFicha2RUT", doc))
+                    .setScope(BodyIdentifier.Scope.CL)
+                    .setType(BodyIdentifier.Type.ORGANIZATION_ID)
                 )
-                .addPublication(new ParsedPublication()
-                        .setIsIncluded(false)
-                        .setSource(PublicationSources.CL_MERCADO)
-                        .setSourceFormType("Fecha de Publicación")
-                        .setPublicationDate(getById("lblFicha3Publicacion", doc))
+                .setAddress(new ParsedAddress()
+                    .setStreet(getById("lblFicha2Direccion", doc))
+                    .setCity(getById("lblFicha2Comuna", doc))
+                    .setState(getById("lblFicha2Region", doc))
                 )
-                .addPublication(new ParsedPublication()
-                        .setIsIncluded(false)
-                        .setSource(PublicationSources.CL_MERCADO)
-                        .setSourceFormType("Fecha de Cierre")
-                        .setPublicationDate(getById("lblFicha3Cierre", doc))
-                )
-                .addBuyer(new ParsedBody()
-                        .setName(getById("lblFicha2Razon", doc))
-                        .addMainActivity(getById("lblFicha2Unidad", doc))
-                        .addBodyId(new BodyIdentifier()
-                                .setId(getById("lblFicha2RUT", doc))
-                                .setScope(BodyIdentifier.Scope.CL)
-                                .setType(BodyIdentifier.Type.ORGANIZATION_ID)
-                        )
-                        .setAddress(new ParsedAddress()
-                                .setStreet(getById("lblFicha2Direccion", doc))
-                                .setCity(getById("lblFicha2Comuna", doc))
-                                .setState(getById("lblFicha2Region", doc))
-                        )
-                        .setContactName(getById("lblFicha7NombreResponsableContrato", doc))
-                        .setEmail(getById("lblFicha7EmailResponsableContrato", doc))
-                        .setPhone(getById("lblFicha7TelefonoResponsableContrato", doc))
-                )
-                .setEnquiryDeadline(getById("lblFicha3Fin", doc))
-                .addCpv(new ParsedCPV()
-                        .setCode(getById("grvProducto_ctl02_lblCategoria", doc))
-                        .setIsMain(Boolean.TRUE.toString())
-                )
-                .setAwardDecisionDate(getById("lblFicha3Adjudicacion", doc))
-                .setAwardCriteria(parseCriteria(doc))
-                .setEligibilityCriteria(JsoupUtils.selectText("div.tabla_ficha_00:has(span#lblNatural)", doc))
-                .addFunding(new ParsedFunding()
-                        .setSource(getById("lblFicha7Financiamiento", doc))
-                )
-                .setSize(getById("lblFicha1Tipo", doc))
-                .setDeposits(getById("grvGarantias_ctl02_lblFicha8Monto", doc) + " " + getById("grvGarantias_ctl02_lblFicha8TipoMoneda",
-                        doc))
-                .addLots(parseLots(rawAdjudicacion));
+                .setContactName(getById("lblFicha7NombreResponsableContrato", doc))
+                .setEmail(getById("lblFicha7EmailResponsableContrato", doc))
+                .setPhone(getById("lblFicha7TelefonoResponsableContrato", doc))
+            )
+            .setEnquiryDeadline(getById("lblFicha3Fin", doc))
+            .addCpv(new ParsedCPV()
+                .setCode(getById("grvProducto_ctl02_lblCategoria", doc))
+                .setIsMain(Boolean.TRUE.toString())
+            )
+            .setAwardDecisionDate(getById("lblFicha3Adjudicacion", doc))
+            .setAwardCriteria(parseCriteria(doc))
+            .setEligibilityCriteria(JsoupUtils.selectText("div.tabla_ficha_00:has(span#lblNatural)", doc))
+            .addFunding(new ParsedFunding().setSource(getById("lblFicha7Financiamiento", doc)))
+            .setSize(getById("lblFicha1Tipo", doc))
+            .setDeposits(getById("grvGarantias_ctl02_lblFicha8Monto", doc) + " " + getById("grvGarantias_ctl02_lblFicha8TipoMoneda", doc))
+            .addLots(parseLots(rawAdjudicacion));
 
         if (adjudicacion != null) {
             parsedTender
-                    .setFinalPrice(new ParsedPrice()
-                            .setNetAmount(getById("lblAmountShow", adjudicacion))
-                            .setCurrency(getById("lblCurrencyShow", adjudicacion))
-                    )
-                    .setEstimatedPrice(new ParsedPrice()
-                            .setNetAmount(getById("lblEstimatedAmountShow", adjudicacion))
-                            .setCurrency(getById("lblCurrencyShow", adjudicacion))
-                    );
+                .setFinalPrice(new ParsedPrice()
+                    .setNetAmount(getById("lblAmountShow", adjudicacion))
+                    .setCurrency(getById("lblCurrencyShow", adjudicacion))
+                )
+                .setEstimatedPrice(new ParsedPrice()
+                    .setNetAmount(getById("lblEstimatedAmountShow", adjudicacion))
+                    .setCurrency(getById("lblCurrencyShow", adjudicacion))
+                );
         }
 
         return Collections.singletonList(parsedTender);
@@ -184,7 +187,7 @@ public final class MPTenderParser extends BaseDatlabTenderParser {
                     .setEstimatedPrice(new ParsedPrice()
                             .setNetAmount(getById("lblEstimatedAmountShow", rawLots))
                             .setCurrency(getById("lblCurrencyShow", rawLots)))
-                    .setBids(parseBids(JsoupUtils.select("tr.cssPRCGridViewHeader ~ tr", lotHeader.parent()), lotHeader, adjudicacion)));
+                    .setBids(parseBids(JsoupUtils.select("tr.cssPRCGridViewHeader ~ tr", lotHeader.parent()), lotHeader)));
             onPageLotCounter++;
         }
 
@@ -196,10 +199,9 @@ public final class MPTenderParser extends BaseDatlabTenderParser {
      *
      * @param lotBids      parse from this
      * @param lotHeader      parse from this
-     * @param adjudicacion parse from this
      * @return List<ParsedBid>
      */
-    private List<ParsedBid> parseBids(final Elements lotBids, final Element lotHeader, final HashMap<String, Object> adjudicacion) {
+    private List<ParsedBid> parseBids(final Elements lotBids, final Element lotHeader) {
         if (lotBids == null) {
             return null;
         }
@@ -228,7 +230,7 @@ public final class MPTenderParser extends BaseDatlabTenderParser {
                             .setUnitType(UnitType.PIECES.name())
                     )
                     .setIsWinning(getByRegexId(".*_lblIsSelected", bid))
-                    .setBidders(parseBidders(bid, adjudicacion))
+                    .setBidders(parseBidders(bid))
             );
         }
 
@@ -239,40 +241,55 @@ public final class MPTenderParser extends BaseDatlabTenderParser {
      * Parse bidders.
      *
      * @param bid          bid to parse from
-     * @param adjudicacion object to parse from
      * @return List<ParsedBody>
      */
-    private List<ParsedBody> parseBidders(final Element bid, final HashMap<String, Object> adjudicacion) {
-        if (bid == null || adjudicacion.get("adjudicacionBodies") == null) {
+    private List<ParsedBody> parseBidders(final Element bid) {
+        if (bid == null) {
             return null;
         }
 
         final List<ParsedBody> result = new ArrayList<>();
-        final Elements bidderElements = JsoupUtils.select("a", bid);
+        final List<String> bidders = JsoupUtils.select("a", bid).stream()
+            .map(Element::text).filter(n -> n != null && !n.isEmpty()).collect(Collectors.toList());
 
-        for (Element bidderElement : bidderElements) {
-            // get source code of bidder page from metadata, key to source is xpath of bids only "a" element
-            final String bidderSource = extract(Hex.decode(((HashMap<String, String>) adjudicacion.get("adjudicacionBodies"))
-                    .get(generateElementXpath(bidderElement))));
-            final Document bidder = Jsoup.parse(bidderSource);
-
-            result.add(new ParsedBody()
-                    .setName(getById("lblSocialReasonDesc", bidder))
-                    .addMainActivity(getById("lblBranchDesc", bidder))
+        for (String bidder : bidders) {
+            Matcher m = getMatcher(bidder, BIDDER_COMMON_REGEX, BIDDER_TMI_REGEX, BIDDER_DUMB_REGEX);
+            if (m.find()) {
+                result.add(new ParsedBody()
+                    .setName(m.group("name"))
                     .addBodyId(new BodyIdentifier()
-                            .setId(getById("lblRutDesc", bidder))
-                            .setScope(BodyIdentifier.Scope.CL)
-                            .setType(BodyIdentifier.Type.ORGANIZATION_ID)
-                    )
-                    .setAddress(new ParsedAddress()
-                            .setStreet(getById("lblAddressDesc", bidder))
-                    )
-                    .setContactName(getById("lblContactDesc", bidder))
-                    .setPhone(getById("lblphoneDesc", bidder))
-                    .setEmail(getById("lblMailDesc", bidder)));
+                        .setId(m.group("id"))
+                        .setScope(BodyIdentifier.Scope.CL)
+                        .setType(BodyIdentifier.Type.ORGANIZATION_ID)
+                    ));
+            } else {
+                logger.error("Unexpected format of the bidder '{}'", bidder);
+                throw new UnrecoverableException("Unexpected bidder format");
+            }
         }
 
         return result;
+    }
+
+    /**
+     * Returns matcher for first matching pattern. If no pattern matches input, returns last matcher.
+     *
+     * @param input
+     *      input to be matched
+     * @param patterns
+     *      list of patterns to be tested
+     * @return matcher
+     */
+    private static Matcher getMatcher(final String input, final Pattern... patterns) {
+        Matcher matcher = null;
+        for (Pattern p : patterns) {
+            matcher = p.matcher(input);
+            if (matcher.find()) {
+                break;
+            }
+        }
+
+        return matcher.reset();
     }
 
     /**
