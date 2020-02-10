@@ -38,22 +38,17 @@ Each above described stage of data is processed by a standalone program called w
 - TenderMaster - processes group of matched tenders. It's an implementation of tender mastering methodology described in D2.8
 - BodyMaster - processes group of matched bodies. It's an implementation of body mastering methodology described in D2.8
 
-Worker names are derived from a package structure of DDCS. Worker names that processes TED source are: 
+Worker names are derived from a package structure of DDCS. Worker names that processes Chilean source are: 
 
-- eu.digiwhist.worker.eu.raw.TedTenderCrawler
-- eu.digiwhist.worker.eu.raw.TedTenderDownloader
-- eu.digiwhist.worker.eu.parsed.TedTenderParser
-- eu.digiwhist.worker.eu.clean.TedTenderCleaner
-- eu.digiwhist.worker.eu.matched.TedTenderMatcher
-- eu.digiwhist.worker.eu.master.TedTenderMaster
-- eu.digiwhist.worker.eu.master.TedBodyMaster
+- eu.datlab.worker.cl.raw.MPTenderCrawler
+- eu.datlab.worker.cl.raw.MPTenderDownloader
+- eu.datlab.worker.cl.parsed.MPTenderParser
+- eu.datlab.worker.cl.clean.MPTenderCleaner
+- eu.datlab.worker.cl.matched.MPTenderMatcher
+- eu.datlab.worker.cl.master.MPTenderMaster
+- eu.datlab.worker.cl.master.MPBodyMaster
 
-Worker names that crawl and download data from country specific sources are named as follows (example is for Spanish sources)
-
-- eu.digiwhist.worker.es.raw.PCETenderCrawler
-- eu.digiwhist.worker.es.raw.PCETenderDownloader
-
-These can be found in the `digiwhist-worker/serc/main/java/eu/digiwhist/worker/[COUNTRY]/raw` folders
+These can be found in the `tender-worker/src/main/java/eu/datlab/worker/[COUNTRY]/[STAGE]` folders
 
 Storage
 -------------------------------------------------------
