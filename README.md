@@ -48,7 +48,7 @@ Worker names are derived from a package structure of DDCS. Worker names that pro
 - eu.datlab.worker.cl.master.MPTenderMaster
 - eu.datlab.worker.cl.master.MPBodyMaster
 
-These can be found in the `tender-worker/src/main/java/eu/datlab/worker/[COUNTRY]/[STAGE]` folders
+For each processed country similar workers can be found in the `tender-worker/src/main/java/eu/datlab/worker/[COUNTRY]/[STAGE]` folders
 
 Storage
 -------------------------------------------------------
