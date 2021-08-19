@@ -21,7 +21,7 @@ import java.util.List;
 /**
  * This plugin calculates new company indicator.
  */
-public class LotNewCompanyIndicatorPlugin extends LotIndicatorPlugin {
+public class LotNewCompanyIndicatorPlugin extends BaseLotIndicatorPlugin {
 
     @Override
     public final Indicator evaluate(final MasterTenderLot lot, final MasterTender tender) {

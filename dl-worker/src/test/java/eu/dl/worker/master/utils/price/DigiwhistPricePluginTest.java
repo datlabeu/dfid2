@@ -10,6 +10,7 @@ import org.junit.Test;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.Currency;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -43,6 +44,13 @@ public final class DigiwhistPricePluginTest {
             new MasterTenderLot().setBids(Arrays.asList(new MasterBid().setIsWinning(true))),
             new MasterTenderLot()
         )), null));
+
+        // currency is not EUR, so minNetAmount or maxNetAmount can't be used
+        MasterTender tender = new MasterTender();
+        tender.setFinalPrice(new Price().setCurrency(Currency.getInstance("CZK"))
+                .setMinNetAmount(new BigDecimal(300)).setMaxNetAmount(new BigDecimal(500)));
+        tender = plugin.master(null, tender, null);
+        assertNull(tender.getDigiwhistPrice());
     }
 
     /**
@@ -51,15 +59,16 @@ public final class DigiwhistPricePluginTest {
     @Test
     public void firstNotNullTest() {
         //plugin should be selects first not empty amount from price attributes in following order: netAmountEur, maxNetAmount, minNetAmount
+        // to use minNetAmount or maxNetAmount the currency must be EUR
         MasterTender tender = new MasterTender();
-        tender.setFinalPrice(new Price().setMinNetAmount(new BigDecimal(300)));
+        tender.setFinalPrice(new Price().setCurrency(Currency.getInstance("EUR")).setMinNetAmount(new BigDecimal(300)));
 
         // best price - minNetAmount
         tender = plugin.master(null, tender, null);
         assertEquals(new BigDecimal(300), tender.getDigiwhistPrice().getNetAmountEur());
 
         // best price - maxNetAmount
-        tender.getFinalPrice().setMaxNetAmount(new BigDecimal(200));
+        tender.getFinalPrice().setCurrency(Currency.getInstance("EUR")).setMaxNetAmount(new BigDecimal(200));
         tender = plugin.master(null, tender, null);
         assertEquals(new BigDecimal(200), tender.getDigiwhistPrice().getNetAmountEur());
 

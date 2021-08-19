@@ -5,19 +5,19 @@ package eu.dl.worker.indicator.plugin;
  */
 public class IndicatorScore {
    private int total;
-   private int fails;
+   private int hits;
 
    /**
     * Default constructor.
     */
    IndicatorScore() {
        this.total = 0;
-       this.fails = 0;
+       this.hits = 0;
    }
 
    /**
-    * Updates score. Increments the counter of tests and in case that {@code test} fails (false) also increments
-    * counter of fails.
+    * Updates score. Increments counter of tests and in case that {@code test} is true also increments
+    * counter of success test.
     *
     * @param test
     *      test.
@@ -25,22 +25,21 @@ public class IndicatorScore {
    final void test(final boolean test) {
        total++;
        if (test) {
-           fails++;
+           hits++;
        }
    }
 
    /**
-    * @return ration as number of failed tests divided by total number of tests, or null if the score wasn't
-    * initialized by calling of {@link #test(boolean)} method
+    * @return ratio as number of success tests divided by total number of tests or 0 for no tests.
     */
-   final double ration() {
-       return isInitialized() ? (double) fails/total * 100 : null;
+   final double ratio() {
+       return total > 0 ? (double) hits / total * 100 : 0;
    }
 
-   /**
-    * @return TRUE if the score was initialized by calling of {@link #test(boolean)} method, otherwise FALSE
-    */
-   final boolean isInitialized() {
-       return total > 0;
+    /**
+     * @return total number of tests
+     */
+   final double getTotal() {
+       return total;
    }
 }

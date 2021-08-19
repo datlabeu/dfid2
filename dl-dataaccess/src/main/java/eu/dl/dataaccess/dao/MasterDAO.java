@@ -21,6 +21,7 @@ public interface MasterDAO<T> {
      */
     List<T> getByGroupId(String groupId);
 
+
     /**
      * Returns objects with the same groupId.
      * 

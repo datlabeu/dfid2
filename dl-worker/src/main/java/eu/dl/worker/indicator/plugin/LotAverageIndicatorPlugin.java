@@ -71,7 +71,7 @@ public abstract class LotAverageIndicatorPlugin extends BaseIndicatorPlugin impl
                 return nonCalculatedIndicator;
             } else {
                 // for multi-lot return undefined
-                undefined();
+                return undefined();
             }
         }
 

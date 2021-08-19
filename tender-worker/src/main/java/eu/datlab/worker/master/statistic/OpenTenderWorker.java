@@ -1,18 +1,25 @@
 package eu.datlab.worker.master.statistic;
 
-import java.util.Arrays;
-
 import eu.datlab.dataaccess.dao.DAOFactory;
+import eu.dl.core.UnrecoverableException;
+import eu.dl.dataaccess.dao.MasterBodyDAO;
 import eu.dl.dataaccess.dao.MasterTenderDAO;
 import eu.dl.dataaccess.dao.TransactionUtils;
+import eu.dl.dataaccess.dto.codetables.PublicationFormType;
 import eu.dl.dataaccess.dto.codetables.TenderSupplyType;
 import eu.dl.dataaccess.dto.generic.CPV;
+import eu.dl.dataaccess.dto.generic.Publication;
+import eu.dl.dataaccess.dto.master.MasterBody;
 import eu.dl.dataaccess.dto.master.MasterTender;
 import eu.dl.dataaccess.dto.master.MasterTenderLot;
+import eu.dl.dataaccess.utils.DigestUtils;
 import eu.dl.worker.BaseWorker;
 import eu.dl.worker.Message;
+import org.apache.lucene.search.spell.NGramDistance;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
@@ -36,7 +43,11 @@ public final class OpenTenderWorker extends BaseWorker {
 
     private static TransactionUtils transactionUtils;
 
-    private static MasterTenderDAO masterDao;
+    private static MasterTenderDAO masterTenderDAO;
+    private static MasterBodyDAO esNewMasterBodyDAO;
+    private static MasterBodyDAO esOldMasterBodyDAO;
+
+    protected static final double SIMILARITY_THRESHOLD = 4;
 
     protected static final List<String> COUNTRIES = Arrays.asList("DE", "IT", "SE", "BE", "FI", "AT", "DK", "GR", "LU",
         "CY", "MT", "IS", "RS", "AM");
@@ -44,8 +55,12 @@ public final class OpenTenderWorker extends BaseWorker {
     protected static final BigDecimal THRESHOLD = new BigDecimal(135000);
     protected static final BigDecimal THRESHOLD_WORKS = new BigDecimal(5186000);
 
-    protected static final String WORKER_PL = "eu.datlab.worker.pl.master.UZPTenderMaster";    
+    protected static final String WORKER_PL = "eu.datlab.worker.pl.master.UZPTenderMaster";
     protected static final String WORKER_GE = "eu.datlab.worker.ge.master.SPATenderMaster";
+    protected static final String WORKER_OLD_ES = "eu.datlab.worker.es.master.PCETenderMaster";
+    protected static final String WORKER_NEW_ES = "eu.datlab.worker.es.master.HaciendaTenderMaster";
+    protected static final String WORKER_OLD_RO = "eu.datlab.worker.ro.master.APATenderMaster";
+    protected static final String WORKER_NEW_RO = "eu.datlab.worker.ro.master.SICAPTenderMaster";
     protected static final List<String> WORKERS_EU = Arrays.asList("eu.datlab.worker.eu.master.TedTenderMaster",
         "eu.datlab.worker.eu.master.TedCSVTenderMaster");
 
@@ -55,7 +70,9 @@ public final class OpenTenderWorker extends BaseWorker {
     public OpenTenderWorker() {
         super();
         transactionUtils = DAOFactory.getDAOFactory().getTransactionUtils();
-        masterDao = DAOFactory.getDAOFactory().getMasterTenderDAO(getName(), VERSION);
+        masterTenderDAO = DAOFactory.getDAOFactory().getMasterTenderDAO(getName(), VERSION);
+        esNewMasterBodyDAO = DAOFactory.getDAOFactory().getMasterBodyDAO(WORKER_NEW_ES, null);
+        esOldMasterBodyDAO = DAOFactory.getDAOFactory().getMasterBodyDAO(WORKER_OLD_ES, null);
     }
 
     @Override
@@ -80,11 +97,9 @@ public final class OpenTenderWorker extends BaseWorker {
 
     @Override
     public void doWork(final Message message) {
-        transactionUtils.begin();
-    		
         String id = message.getValue("id");
 
-        final MasterTender tender = masterDao.getById(id);
+        final MasterTender tender = masterTenderDAO.getById(id);
 
         if (tender != null) {
             HashMap<String, Object> metaData = Optional.ofNullable(tender.getMetaData()).orElse(new HashMap<>());
@@ -96,10 +111,8 @@ public final class OpenTenderWorker extends BaseWorker {
 
             metaData.put("opentender", isOpenTender(tender));
             tender.setMetaData(metaData);
-            masterDao.save(tender);            
+            masterTenderDAO.save(tender);
         }
-
-        transactionUtils.commit();
     }
 
     @Override
@@ -114,7 +127,7 @@ public final class OpenTenderWorker extends BaseWorker {
 
     /**
      * Checks whether the given tender is suitable for opentender export.
-     * 
+     *
      * @param tender
      *      master tender to parse from
      * @return true only and only if the tender is suitable for open tender export, otherwise false.
@@ -141,13 +154,102 @@ public final class OpenTenderWorker extends BaseWorker {
             if (price == null
                 || (WORKERS_EU.contains(tender.getCreatedBy()) && !COUNTRIES.contains(tender.getCountry())
                     && price.compareTo(threshold) > 0)
-                || (!workers.contains(tender.getCreatedBy()) && price.compareTo(threshold) <= 0)) {
-
+                    || (!workers.contains(tender.getCreatedBy()) && price.compareTo(threshold) <= 0)) {
+                if ((tender.getCreatedBy().equals(WORKER_OLD_ES) && isOnSourceES(tender))
+                        || (tender.getCreatedBy().equals(WORKER_OLD_RO) && isOnSourceRO(tender))) {
+                    // If tender is duplicated on both old and new sources sources, use only one from the new
+                    // source (for ES, RO workers only)
+                    return false;
+                }
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Checks if given tender is on new ES source based on buyerAssignedId, title, buyerName and worker.
+     *
+     * @param tender      tender to check
+     * @return true if source contains tender with the same buyerAssignedId and similar title and buyer name as given
+     * tender and created by given worker, false otherwise.
+     */
+    private static boolean isOnSourceES(final MasterTender tender) {
+        if(tender == null || tender.getBuyerAssignedId() == null || tender.getBuyers() == null || tender.getBuyers().isEmpty()
+        || tender.getTitle() == null) {
+            return false;
+        }
+
+        String buyerAssignedId = tender.getBuyerAssignedId();
+
+        List<MasterTender> tenders = masterTenderDAO.getByBuyerAssignedId(buyerAssignedId);
+        tenders.removeIf(t -> !t.getCreatedBy().equals(WORKER_NEW_ES));
+
+        if(tenders.isEmpty()) {
+            return false;
+        }
+        String title = DigestUtils.removeAccents(tender.getTitle()).toLowerCase();
+        String buyerName = DigestUtils.removeAccents(getFirstBuyerName(tender, false)).toLowerCase();
+
+        return tenders.stream().filter(Objects::nonNull)
+                .anyMatch(t ->
+                        (new NGramDistance(3).getDistance(title,
+                                DigestUtils.removeAccents(t.getTitle()).toLowerCase()) > 0.6)
+                                &&
+                                (new NGramDistance(3).getDistance(buyerName,
+                                        DigestUtils.removeAccents(getFirstBuyerName(t, true)).toLowerCase()) > 0.6));
+    }
+
+    /**
+     * Gets name of first buyer for which name is not missing.
+     *
+     * @param tender    tender
+     * @param newWorker indicates if worker is new or old
+     * @return name or empty string if no buyer name is available
+     */
+    private static String getFirstBuyerName(final MasterTender tender, final boolean newWorker) {
+        if (tender.getBuyers() == null || tender.getBuyers().stream().filter(Objects::nonNull).noneMatch(b -> b.getGroupId() != null)) {
+            return "";
+        }
+        String buyerGroupId = tender.getBuyers().stream().filter(Objects::nonNull)
+                .filter(b -> b.getGroupId() != null).findFirst().orElse(new MasterBody()).getGroupId();
+        List<MasterBody> buyerList =
+                (List<MasterBody>) (newWorker ? esNewMasterBodyDAO : esOldMasterBodyDAO).getByGroupId(buyerGroupId);
+        if(buyerList.size() > 1) {
+            throw new UnrecoverableException("There are more mastered instances with the same groupId.");
+        } else if (buyerList.isEmpty()) {
+            return "";
+        }
+        MasterBody buyer = buyerList.get(0);
+        if (buyer == null || buyer.getName() == null) {
+            return "";
+        }
+        return buyer.getName();
+    }
+
+    /**
+     * Checks if given tender is on new RO source based on sourceId and worker.
+     *
+     * @param tender      tender to check
+     * @return true if source contains tender with the same sourceId as buyerAssignedId of given tender and created by given worker, false
+     * otherwise.
+     */
+    private static boolean isOnSourceRO(final MasterTender tender) {
+        // deduplication of RO sources is provided based on buyerAssignedId from CONTRACT_AWARD publication from APA source and
+        // sourceId from publication from SICAP source.
+        if(tender == null || tender.getPublications() == null || tender.getPublications().stream()
+                .noneMatch(p -> p.getFormType() != null && p.getFormType().equals(PublicationFormType.CONTRACT_AWARD))) {
+            return false;
+        }
+
+        String buyerAssignedId = tender.getPublications().stream().filter(Objects::nonNull).map(Publication::getBuyerAssignedId)
+                    .filter(Objects::nonNull).findFirst().orElse(null);
+
+        // Search for tenders witch sourceId is equal to buyerAssignedId of given tender.
+        List<MasterTender> tenders = masterTenderDAO.getBySourceId(buyerAssignedId);
+        tenders.removeIf(t -> !t.getCreatedBy().equals(WORKER_NEW_RO));
+        return !tenders.isEmpty();
     }
 
     /**

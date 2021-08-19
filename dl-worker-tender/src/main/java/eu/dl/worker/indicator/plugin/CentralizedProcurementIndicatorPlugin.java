@@ -9,8 +9,7 @@ import static eu.dl.dataaccess.dto.indicator.TenderIndicatorType.ADMINISTRATIVE_
 /**
  * This plugin calculates Single bid indicator.
  */
-public class CentralizedProcurementIndicatorPlugin extends BaseIndicatorPlugin
-        implements IndicatorPlugin<MasterTender> {
+public class CentralizedProcurementIndicatorPlugin extends BaseIndicatorPlugin implements IndicatorPlugin<MasterTender> {
 
     @Override
     public final Indicator evaluate(final MasterTender tender) {

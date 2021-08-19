@@ -37,8 +37,7 @@ public class KeyMissingFieldsIndicatorPlugin extends BaseIndicatorPlugin impleme
      * @param cleanTenderDAO
      *      clean tender DAO
      */
-    public KeyMissingFieldsIndicatorPlugin(final MatchedTenderDAO matchedTenderDAO,
-        final CleanTenderDAO cleanTenderDAO) {
+    public KeyMissingFieldsIndicatorPlugin(final MatchedTenderDAO matchedTenderDAO, final CleanTenderDAO cleanTenderDAO) {
         this.matchedTenderDAO = matchedTenderDAO;
         this.cleanTenderDAO = cleanTenderDAO;
     }
@@ -48,7 +47,7 @@ public class KeyMissingFieldsIndicatorPlugin extends BaseIndicatorPlugin impleme
         if (tender == null) {
             return insufficient();
         }
-        
+
         Map<PublicationFormType, MatchedTender> latest = TenderUtils.getLatestPublications(tender.getGroupId(),
             matchedTenderDAO, Arrays.asList(CONTRACT_NOTICE, CONTRACT_AWARD));
 
@@ -56,7 +55,7 @@ public class KeyMissingFieldsIndicatorPlugin extends BaseIndicatorPlugin impleme
         IndicatorScore score = new IndicatorScore();
 
         latest.entrySet().forEach(n -> {
-            CleanTender cleanTender = (CleanTender) cleanTenderDAO.getById(n.getValue().getCleanObjectId());
+            CleanTender cleanTender = cleanTenderDAO.getById(n.getValue().getCleanObjectId());
 
             if (n.getKey() == CONTRACT_NOTICE) {
                 evaluateContractNotice(cleanTender, score);
@@ -65,7 +64,7 @@ public class KeyMissingFieldsIndicatorPlugin extends BaseIndicatorPlugin impleme
             }
         });
 
-        return score.isInitialized() ? calculated(score.ration()) : insufficient();
+        return score.getTotal() == 0 ? insufficient() : calculated(score.ratio());
     }
 
     @Override
@@ -83,7 +82,8 @@ public class KeyMissingFieldsIndicatorPlugin extends BaseIndicatorPlugin impleme
      * @return updated score
      */
     private static IndicatorScore evaluateContractNotice(final CleanTender tender, final IndicatorScore score) {
-        if (tender.getAwardCriteria() != null && tender.getSelectionMethod() == SelectionMethod.MEAT) {
+        if (tender.getAwardCriteria() != null && tender.getSelectionMethod() != null
+            && tender.getSelectionMethod() == SelectionMethod.MEAT) {
             tender.getAwardCriteria().forEach(n -> {
                 score.test(n.getName() != null);
                 score.test(n.getWeight() != null);
@@ -93,7 +93,7 @@ public class KeyMissingFieldsIndicatorPlugin extends BaseIndicatorPlugin impleme
         if (tender.getLots() != null) {
             tender.getLots().forEach(n -> {
                 score.test(Arrays.asList(n.getEstimatedStartDate(), n.getEstimatedCompletionDate(),
-                        n.getEstimatedDurationInMonths(), n.getEstimatedDurationInDays()).stream()
+                    n.getEstimatedDurationInMonths(), n.getEstimatedDurationInDays()).stream()
                     .anyMatch(m -> m != null));
                 score.test(n.getSelectionMethod() != null);
             });
@@ -135,7 +135,7 @@ public class KeyMissingFieldsIndicatorPlugin extends BaseIndicatorPlugin impleme
                             if (bid.getPrice() != null) {
                                 score.test(bid.getPrice().getNetAmount() != null);
                             }
-                            
+
                             score.test(bid.getIsSubcontracted() != null);
                         }
                     }

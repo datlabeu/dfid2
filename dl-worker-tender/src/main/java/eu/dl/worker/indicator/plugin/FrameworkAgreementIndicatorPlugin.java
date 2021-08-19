@@ -9,8 +9,7 @@ import eu.dl.dataaccess.dto.master.MasterTenderLot;
 /**
  * This plugin calculates framework agreement indicator.
  */
-public class FrameworkAgreementIndicatorPlugin extends BaseIndicatorPlugin
-        implements IndicatorPlugin<MasterTender> {
+public class FrameworkAgreementIndicatorPlugin extends BaseIndicatorPlugin implements IndicatorPlugin<MasterTender> {
 
     @Override
     public final Indicator evaluate(final MasterTender tender) {

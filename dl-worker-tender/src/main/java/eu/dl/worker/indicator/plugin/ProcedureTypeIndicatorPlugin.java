@@ -33,8 +33,14 @@ public class ProcedureTypeIndicatorPlugin extends BaseIndicatorPlugin implements
         	configKey = configKey + ".procedureType." + tender.getProcedureType();
         }
 
-        if (config.getParam(configKey) != null && config.getParam(configKey).equals("YES")) {
+        if(config.getParam(configKey) == null) {
+            return undefined();
+        }
+
+        if (config.getParam(configKey).equals("0")) {
             return calculated(0d, metaData);
+        } else if (config.getParam(configKey).equals("50")){
+            return calculated(50d, metaData);
         } else {
             return calculated(100d, metaData);
         }

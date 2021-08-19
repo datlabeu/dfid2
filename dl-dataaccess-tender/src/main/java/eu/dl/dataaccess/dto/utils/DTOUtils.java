@@ -154,6 +154,28 @@ public final class DTOUtils {
     }
 
     /**
+     * Method gets dispatch date of the matched tender.
+     *
+     * @param matchedTender
+     *         matched tender
+     *
+     * @return dispatch date of the matched tender
+     */
+    public static LocalDate getDispatchDate(final MatchedTender matchedTender) {
+        if (matchedTender == null) {
+            return null;
+        }
+
+        for (Publication publication : matchedTender.getPublications()) {
+            if (publication != null && publication.getIsIncluded() != null && publication.getIsIncluded()) {
+                return publication.getDispatchDate();
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Method gets publication date of the item (part of tender).
      *
      * @param <T>

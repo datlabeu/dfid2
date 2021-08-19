@@ -2,6 +2,7 @@ package eu.dl.dataaccess.dao;
 
 import eu.dl.dataaccess.dto.master.MasterTender;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -135,4 +136,44 @@ public interface MasterTenderDAO<T extends MasterTender> extends MasterDAO<T> {
      * @return list of tender ids
      */
     List<String> getIdsBySourceAndVersion(String name, String version);
+
+    /**
+     * Returns last date of publication before {@code maxDate} for the given worker and version.
+     *
+     * @param createdBy
+     *      worker name
+     * @param createdByVersion
+     *      worker version
+     * @param maxDate
+     *      max date
+     * @return last publication date or null
+     */
+    LocalDate getLastPublicationDate(String createdBy, String createdByVersion, LocalDate maxDate);
+
+    /**
+     * Returns last date of publication for the given worker and version.
+     *
+     * @param createdBy
+     *      worker name
+     * @param createdByVersion
+     *      worker version
+     *
+     * @return last publication date or null
+     */
+    LocalDate getLastPublicationDate(String createdBy, String createdByVersion);
+
+
+    /**
+     * Gets list of master tenders with given buyer assigned id.
+     * @param buyerAssignedId buyer assigned id
+     * @return list of master tenders with given buyer assigned id
+     */
+    List<MasterTender> getByBuyerAssignedId(String buyerAssignedId);
+
+    /**
+     * Gets list of master tenders with given source id in any publication.
+     * @param sourceId source id
+     * @return list of master tenders with given source id
+     */
+    List<MasterTender> getBySourceId(String sourceId);
 }

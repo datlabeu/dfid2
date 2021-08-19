@@ -14,7 +14,7 @@ import static eu.dl.dataaccess.dto.codetables.TenderLotStatus.FINISHED;
 /**
  * This plugin calculates corruption single bid indicator.
  */
-public class LotSingleBidIndicatorPlugin extends LotIndicatorPlugin {
+public class LotSingleBidIndicatorPlugin extends BaseLotIndicatorPlugin {
 
     @Override
     public final Indicator evaluate(final MasterTenderLot lot, final MasterTender tender) {

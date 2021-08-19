@@ -24,8 +24,7 @@ import java.util.function.Function;
 /**
  * This plugin calculates discrepancies between call for tender and contract award notices.
  */
-public class NoticeAndAwardDiscrepanciesIndicatorPlugin extends BaseIndicatorPlugin
-    implements IndicatorPlugin<MasterTender> {
+public class NoticeAndAwardDiscrepanciesIndicatorPlugin extends BaseIndicatorPlugin implements IndicatorPlugin<MasterTender> {
 
     private final MatchedTenderDAO matchedTenderDAO;
 
@@ -116,7 +115,7 @@ public class NoticeAndAwardDiscrepanciesIndicatorPlugin extends BaseIndicatorPlu
         }
         score.test(noticeFund == awardFund);
 
-        return score.isInitialized() ? calculated(score.ration()) : insufficient();
+        return calculated(score.ratio());
     }
     
     /**

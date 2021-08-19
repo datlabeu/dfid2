@@ -9,8 +9,7 @@ import eu.dl.dataaccess.dto.master.MasterTenderLot;
 /**
  * This plugin calculates electronic aution indicator.
  */
-public class ElectronicAuctionIndicatorPlugin extends BaseIndicatorPlugin
-        implements IndicatorPlugin<MasterTender> {
+public class ElectronicAuctionIndicatorPlugin extends BaseIndicatorPlugin implements IndicatorPlugin<MasterTender> {
 
     @Override
     public final Indicator evaluate(final MasterTender tender) {

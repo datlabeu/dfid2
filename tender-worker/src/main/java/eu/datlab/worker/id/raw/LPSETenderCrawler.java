@@ -1,12 +1,5 @@
 package eu.datlab.worker.id.raw;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.gargoylesoftware.htmlunit.FailingHttpStatusCodeException;
-import com.gargoylesoftware.htmlunit.Page;
-import com.gargoylesoftware.htmlunit.UnexpectedPage;
-import com.gargoylesoftware.htmlunit.WebClient;
-import com.gargoylesoftware.htmlunit.html.HtmlPage;
 import eu.datlab.dataaccess.dao.DAOFactory;
 import eu.dl.core.UnrecoverableException;
 import eu.dl.dataaccess.dao.CrawlerAuditDAO;
@@ -19,18 +12,30 @@ import eu.dl.worker.Message;
 import eu.dl.worker.clean.utils.StringUtils;
 import eu.dl.worker.clean.utils.URLSchemeType;
 import eu.dl.worker.raw.BaseCrawler;
+import org.openqa.selenium.By;
+import org.openqa.selenium.NoSuchSessionException;
+import org.openqa.selenium.WebDriverException;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.remote.CapabilityType;
+import org.openqa.selenium.remote.RemoteWebDriver;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
 
-import java.io.IOException;
+import java.net.MalformedURLException;
 import java.net.URL;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
- * LPSE subject's tenders crawler in Indonesia.
- *
- * @author Tomas Mrazek
+ * Tender crawler for Indonesia.
  */
 public final class LPSETenderCrawler extends BaseCrawler {
     private static final String VERSION = "1.0";
@@ -45,45 +50,58 @@ public final class LPSETenderCrawler extends BaseCrawler {
     private static final String BERKONTRAK_TAB_URL = "%1$s/eproc4/evaluasi/%2$s/pemenangberkontrak";
     private static final String JADWAL_LINK_URL = "%1$s/eproc4/lelang/%2$s/jadwal";
 
-    private static final String NTH_PAGE_URL = "%1$s/eproc4/dt/lelang?start=%2$d&length=%3$d";
-
-    private static final int CONNECTION_TIMEOUT = 120000;
+    private static final String PAGE_URL = "%1$s/eproc4/lelang";
 
     private String currentSourceUrl;
 
     private final CrawlerAuditDAO<CrawlerAuditRecord> auditDAO = DAOFactory.getDAOFactory().getCrawlerAuditDAO(getName(), getVersion());
 
-    private static final Integer PAGE_SIZE = 1000;
 
-    private WebClient webClient;
+    private RemoteWebDriver webDriver;
+    private WebDriverWait webDriverWait;
+    private final JavascriptExecutor jsExecutor;
 
-    private ObjectMapper mapper;
+    private static final String LAST_PAGE_XPATH = "//li[@id='tbllelang_last']";
+    private static final String LAST_PAGE_ID = "'tbllelang_last'";
+    private static final String PREVIOUS_PAGE_XPATH = "//a[@aria-label='Previous']";
+    private static final String PREVIOUS_PAGE_ID = "'tbllelang_previous'";
+    private static final String NEXT_PAGE_XPATH = "//a[@aria-label='Next']";
+    private static final String NEXT_PAGE_ID = "'tbllelang_next'";
+    private static final String LAST_PAGE_ON_SOURCE_XPATH = "//a[@aria-controls='tbllelang' and @data-dt-idx='8']";
+
+    private static final String ROWS_XPATH = "//*[@class='odd' or @class='even']";
+    private static final String DATA_TABLES_INFO_XPATH = "//*[@class='dataTables_info']";
+    private static final String CONTENT_XPATH = "//tbody";
 
     /**
-     * String used as User-agent header for HTTP requests.
-     */
-    private static final String USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko)" +
-        " Chrome/68.0.3440.84 Safari/537.36";
-
-
-    /**
-     * Web client initialization.
+     * Web driver initialization.
      */
     public LPSETenderCrawler() {
         super();
+        webDriver = getWebDriver();
+        webDriverWait = new WebDriverWait(webDriver, Duration.ofSeconds(60));
+        jsExecutor = webDriver;
+    }
 
-        webClient = new WebClient();
-        webClient.getOptions().setJavaScriptEnabled(true);
-        webClient.getOptions().setCssEnabled(false);
-        webClient.getOptions().setUseInsecureSSL(true);
-        webClient.getOptions().setThrowExceptionOnScriptError(false);
-        webClient.getOptions().setThrowExceptionOnFailingStatusCode(false);
-        webClient.getOptions().setTimeout(CONNECTION_TIMEOUT);
+    /**
+     * Initializes remote web driver with options.
+     * @return web driver or null
+     */
+    private RemoteWebDriver getWebDriver(){
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("start-maximized");
+        options.addArguments("disable_infobars");
+        options.addArguments("--disable-gpu");
+        options.setHeadless(true);
+        options.setCapability(CapabilityType.BROWSER_NAME, "chrome");
+        options.setCapability(CapabilityType.ACCEPT_SSL_CERTS, true);
 
-        webClient.addRequestHeader("User-Agent", USER_AGENT);
-        webClient.waitForBackgroundJavaScript(10000);
-
-        mapper = new ObjectMapper();
+        try {
+            return new RemoteWebDriver(new URL("http://localhost:4444/wd/hub"), options);
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+            throw new UnrecoverableException("Unable to initialize web driver");
+        }
     }
 
     @Override
@@ -104,54 +122,45 @@ public final class LPSETenderCrawler extends BaseCrawler {
         Integer pageNumber = lastPages.get(id);
         if (pageNumber != null) {
             logger.info("Last page number {} for organization {} found in crawler audit.", pageNumber, id);
-            pageNumber += 1;
         } else {
             pageNumber = 1;
         }
+        int messagesCount = 0;
 
         // removes /eproc or /eproc4 and/or / from the end of url
         currentSourceUrl = sourceUrl.replaceAll("(/eproc4?)?/?$", "");
 
-        String url = currentSourceUrl + "/eproc4/lelang";
+        String url = String.format(PAGE_URL, currentSourceUrl);
 
         logger.info("Crawling of {} starts", url);
+        goToNthPage(pageNumber);
 
-        try {
-            int rowsCount;
-            do {
-                logger.info("Processing page {}# with url {}", pageNumber, getNthPageUrl(pageNumber));
-
-                rowsCount = 0;
-
-                // loads JSON of n-th page
-                JsonNode json = mapper.readTree(getNthPage(pageNumber));
-                Iterator<JsonNode> rows = json.path("data").elements();
-                while (rows.hasNext()) {
-                    String tenderId = rows.next().path(0).textValue();
-
-                    HashMap<String, Object> metaData = new HashMap<>();
-                    metaData.put("additionalUrls", Arrays.asList(
+        List<WebElement> rows = webDriver.findElementsByXPath(ROWS_XPATH);
+        while(rows != null && !rows.isEmpty()) {
+            logger.info("Processing page {}# with url {}", pageNumber, String.format(PAGE_URL, currentSourceUrl));
+            for (WebElement row : rows) {
+                String tenderId = row.findElement(By.className("sorting_1")).getText();
+                HashMap<String, Object> metaData = new HashMap<>();
+                metaData.put("additionalUrls", Arrays.asList(
                         String.format(PESERTA_TAB_URL, currentSourceUrl, tenderId),
                         String.format(PEMANANG_TAB_URL, currentSourceUrl, tenderId),
                         String.format(HASIL_TAB_URL, currentSourceUrl, tenderId),
                         String.format(BERKONTRAK_TAB_URL, currentSourceUrl, tenderId),
                         String.format(JADWAL_LINK_URL, currentSourceUrl, tenderId)
-                    ));
+                ));
 
-                    createAndPublishMessage(String.format(MAIN_TAB_URL, currentSourceUrl, tenderId), metaData);
-
-                    rowsCount += 1;
-                }
-
-                lastPages.put(id, pageNumber);
-                auditDAO.save(audit);
-
-                pageNumber += 1;
-            } while (rowsCount == PAGE_SIZE);
-        } catch (Exception ex) {
-            logger.error("Unable to crawl page {} because of", pageNumber, ex);
-            throw new UnrecoverableException("Unable to get crawl page", ex);
+                createAndPublishMessage(String.format(MAIN_TAB_URL, currentSourceUrl, tenderId), metaData);
+                messagesCount += 1;
+            }
+            lastPages.put(id, pageNumber);
+            auditDAO.save(audit);
+            pageNumber += 1;
+            if(!goToPreviousPage()) {
+                break;
+            }
+            rows = webDriver.findElementsByXPath(ROWS_XPATH);
         }
+        logger.info("Crawling for url {} successfully completed, {} messages sent", url, messagesCount);
     }
 
     /**
@@ -197,44 +206,133 @@ public final class LPSETenderCrawler extends BaseCrawler {
     }
 
     /**
-     * @param n
-     *      number of required page
-     * @return n-th page JSON response body
-     * @throws IOException
-     *      in case that the page loading fails
+     * Loads previous page by clicking on previous page button and waits until content is loaded.
+     * @return false if current page is first, true otherwise
      */
-    private String getNthPage(final int n) throws IOException {
-        Page page = webClient.getPage(getNthPageUrl(n));
-
-        // If the HTML page is returned, attempts to execute javascript and load given page again.
-        // The mentioned script does some kind of magic, that set anonymous user for the session. After this step is necessary to load
-        // the required page again.
-        if (page.isHtmlPage()) {
-            if (page.getWebResponse().getStatusCode() == 403) {
-                ((HtmlPage) page).executeJavaScript("_client.start();");
-                page = webClient.getPage(getNthPageUrl(n));
-            }
+    private boolean goToPreviousPage() {
+        String pageInfo = webDriver.findElementByXPath(DATA_TABLES_INFO_XPATH).getText();
+        if(pageInfo.contains(" 1 ")) {
+            return false;
         }
-
-        // The expected result is an instance of UnexpectedPage class (JSON page is interpreted as unexpected), for other pages throw an
-        // HTTP status exception.
-        // Note: Response is the instance of either UnexpectedPage (in case of JSON, that we want) or HtmlPage (in case of HTTP status
-        // exception)
-        if (!(page instanceof UnexpectedPage)) {
-            throw new FailingHttpStatusCodeException(page.getWebResponse());
-        }
-
-        return page.getWebResponse().getContentAsString();
+        // click button via javascript executor because webdriver click fails for some pages
+        // with exception 'ElementClickInterceptedException'
+        jsExecutor.executeScript("document.getElementById(" + PREVIOUS_PAGE_ID + ").click();");
+        // wait until content is loaded and page info is changed, it indicates that the new page was loaded
+        webDriverWait.until(ExpectedConditions.and(
+                ExpectedConditions.presenceOfElementLocated(By.xpath(CONTENT_XPATH)),
+                ExpectedConditions.not(
+                        ExpectedConditions.textToBe(By.xpath(DATA_TABLES_INFO_XPATH), pageInfo)),
+                ExpectedConditions.presenceOfElementLocated(By.xpath(ROWS_XPATH))));
+        return true;
     }
 
     /**
-     * @param n
-     *      number of required page
-     * @return url of n-th page
+     * Loads next page by clicking on next page button and waits until content is loaded.
      */
-    private String getNthPageUrl(final int n) {
-        return String.format(NTH_PAGE_URL, currentSourceUrl, PAGE_SIZE * (n - 1), PAGE_SIZE);
+    private void goToNextPage() {
+        String pageInfo = webDriver.findElementByXPath(DATA_TABLES_INFO_XPATH).getText();
+        // click button via javascript executor because webdriver click fails for some pages
+        // with exception 'ElementClickInterceptedException'
+        jsExecutor.executeScript("document.getElementById(" + NEXT_PAGE_ID + ").click();");
+        // wait until content is loaded and page info is changed, it indicates that the new page was loaded
+        webDriverWait.until(ExpectedConditions.and(
+                ExpectedConditions.presenceOfElementLocated(By.xpath(CONTENT_XPATH)),
+                ExpectedConditions.not(
+                        ExpectedConditions.textToBe(By.xpath(DATA_TABLES_INFO_XPATH), pageInfo)),
+                ExpectedConditions.presenceOfElementLocated(By.xpath(ROWS_XPATH))));
     }
+
+
+    /**
+     * Loads n-th page from the end and waits until content is loaded.
+     * @param n number of required page (from the end)
+     */
+    private void goToNthPage(final int n) {
+        String url = String.format(PAGE_URL, currentSourceUrl);
+        try {
+            webDriver.manage().window().maximize();
+            webDriver.manage().timeouts().pageLoadTimeout(90, TimeUnit.SECONDS);
+            webDriver.get(url);
+            // wait until content is loaded properly and last page button is present
+            webDriverWait.until(ExpectedConditions.and(
+                    ExpectedConditions.presenceOfElementLocated(By.xpath(CONTENT_XPATH)),
+                    ExpectedConditions.presenceOfElementLocated(By.xpath(LAST_PAGE_XPATH))));
+        } catch (NoSuchSessionException e) {
+            logger.info("No such session");
+            webDriver = getWebDriver();
+            webDriverWait = new WebDriverWait(webDriver, Duration.ofSeconds(60));
+            try {
+                webDriver.manage().window().maximize();
+                webDriver.manage().timeouts().pageLoadTimeout(90, TimeUnit.SECONDS);
+                webDriver.get(url);
+                // wait until content is loaded properly and last page button is present
+                webDriverWait.until(ExpectedConditions.and(
+                        ExpectedConditions.presenceOfElementLocated(By.xpath(CONTENT_XPATH)),
+                        ExpectedConditions.presenceOfElementLocated(By.xpath(LAST_PAGE_XPATH))));
+            } catch (NoSuchSessionException e1) {
+                e.printStackTrace();
+                throw new UnrecoverableException("No such session after reinitialising web driver");
+            }
+        } catch(Exception e) {
+            currentSourceUrl = currentSourceUrl.replace("https://", "http://");
+            String modifiedUrl = String.format(PAGE_URL, currentSourceUrl);
+            logger.info("Unable to load page on url {}. Trying to load page on modified url {}", url, modifiedUrl);
+            try {
+                webDriver.get(modifiedUrl);
+                // wait until content is loaded properly and last page button is present
+                webDriverWait.until(ExpectedConditions.and(
+                        ExpectedConditions.presenceOfElementLocated(By.xpath(CONTENT_XPATH)),
+                        ExpectedConditions.presenceOfElementLocated(By.xpath(LAST_PAGE_XPATH))));
+            } catch(WebDriverException wde) {
+                logger.info("Unable to load page on url {}", modifiedUrl);
+                throw new UnrecoverableException("Unable to load page", wde);
+            }
+        }
+
+        boolean tooFewPagesAvailable = false;
+        int lastPageOnSource = -1;
+        try {
+            lastPageOnSource = Integer.parseInt(webDriver.findElementByXPath(LAST_PAGE_ON_SOURCE_XPATH).getText());
+        } catch (NoSuchElementException | NumberFormatException e) {
+            // unable to get last page number from the list of page buttons, crawling will just start from the last page
+            logger.info("Too few pages, search will just start from the last one.");
+            tooFewPagesAvailable = true;
+        }
+
+        // if page number is grater than lastPageOnSource / 2 than start moving from the first page, otherwise start from the last page
+        if(lastPageOnSource > 0 && n > lastPageOnSource / 2) {
+            for(int i = 1; i < lastPageOnSource - n + 1; i++) {
+                goToNextPage();
+            }
+        } else {
+            String pageInfo = webDriver.findElementByXPath(DATA_TABLES_INFO_XPATH).getText();
+            // if too few pages are available and the page info contains duplicated numbers,
+            // then the first page is the only one page, so
+            // we don't click on the last page button
+            if (tooFewPagesAvailable
+                    && Arrays.stream(pageInfo.split(" "))
+                    .filter(a -> a.matches("\\d+"))
+                    .collect(Collectors.toSet()).size() < 3) {
+                return;
+            }
+
+            // click button via javascript executor because webdriver click fails for some pages
+            // with exception 'ElementClickInterceptedException'
+            jsExecutor.executeScript("document.getElementById(" + LAST_PAGE_ID + ").click();");
+
+            // wait until content is loaded and page info is changed, it indicates that the new page was loaded
+            webDriverWait.until(ExpectedConditions.and(
+                    ExpectedConditions.presenceOfElementLocated(By.xpath(CONTENT_XPATH)),
+                    ExpectedConditions.not(
+                            ExpectedConditions.textToBe(By.xpath(DATA_TABLES_INFO_XPATH), pageInfo)),
+                    ExpectedConditions.presenceOfElementLocated(By.xpath(ROWS_XPATH))));
+
+            for(int i = 1; i < n; i++) {
+                goToPreviousPage();
+            }
+        }
+    }
+
 
     @Override
     protected TransactionUtils getTransactionUtils() {

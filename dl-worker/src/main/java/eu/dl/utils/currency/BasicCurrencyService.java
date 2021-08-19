@@ -66,20 +66,19 @@ public class BasicCurrencyService implements CurrencyService {
                     amount, currencyFrom, currencyTo);
             return null;
         }
-        
+        // no convert needed, two same currencies provided
+        if (currencyFrom.getCurrencyCode().equals(currencyTo.getCurrencyCode())) {
+            logger.debug("{} {} converted to {}", amount, currencyFrom, currencyTo);
+            return amount;
+        }
+
         // get exchange rates for date
         ExchangeRates exchangeRates = getExchangeRates(date);
         if (exchangeRates == null || exchangeRates.getRates() == null) {
             throw new UnconvertableException("Unable to convert currency, there are no exchange "
                     + "rates available for the desired date " + date);
         }
-        
-        // no convert needed, two same currencies provided
-        if (currencyFrom.getCurrencyCode().equals(currencyTo.getCurrencyCode())) {
-            logger.debug("{} {} converted to {}", amount, currencyFrom, currencyTo);
-            return amount;
-        }
-        
+
         // currencyFrom is base
         if (currencyFrom.getCurrencyCode().equals(exchangeRates.getBase())) {
             logger.debug("currencyFrom is the base for exchange rates");
@@ -131,6 +130,10 @@ public class BasicCurrencyService implements CurrencyService {
      * @return found result or null
      */
     public final ExchangeRates getExchangeRates(final LocalDate date) {
+        if(date == null) {
+            return null;
+        }
+
         // try cache first
         if (cache.containsKey(date)) {
             // rates for date found, return them

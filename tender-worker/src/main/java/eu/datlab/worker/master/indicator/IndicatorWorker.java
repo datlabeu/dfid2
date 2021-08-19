@@ -1,6 +1,7 @@
 package eu.datlab.worker.master.indicator;
 
 import eu.datlab.dataaccess.dao.DAOFactory;
+import eu.dl.dataaccess.dao.MatchedTenderDAO;
 import eu.dl.dataaccess.dto.master.MasterTenderLot;
 import eu.dl.dataaccess.utils.PopulateUtils;
 import eu.dl.dataaccess.dao.MasterBodyDAO;
@@ -10,33 +11,20 @@ import eu.dl.dataaccess.dto.indicator.Indicator;
 import eu.dl.dataaccess.dto.master.MasterTender;
 import eu.dl.worker.BaseWorker;
 import eu.dl.worker.Message;
-import eu.dl.worker.indicator.plugin.AdvertisementPeriodIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.CallForTenderIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.CentralizedProcurementIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.LotDecisionPeriodIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.LotNewCompanyIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.LotSingleBidIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.CoveredByGPAIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.DecisionPeriodIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.ElectronicAuctionIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.EnglishLanguageIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.FrameworkAgreementIndicatorPlugin;
 import eu.dl.worker.indicator.plugin.IndicatorPlugin;
-import eu.dl.worker.indicator.plugin.KeyMissingFieldsIndicatorPlugin;
 import eu.dl.worker.indicator.plugin.LotIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.NewCompanyIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.NoticeAndAwardDiscrepanciesIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.ProcedureTypeIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.SingleBidIndicatorPlugin;
-import eu.dl.worker.indicator.plugin.TaxHavenIndicatorPlugin;
 import eu.dl.worker.utils.BasicPluginRegistry;
 import eu.dl.worker.utils.PluginRegistry;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Set;
 
 /**
  * This worker calculates indicators for tenders.
@@ -64,7 +52,23 @@ public class IndicatorWorker extends BaseWorker {
     protected PluginRegistry<LotIndicatorPlugin> lotIndicatorPluginRegistry = new BasicPluginRegistry();
 
     /**
-     * Initialization of everythong.
+     * Template for tender level plugin class name. Plugin name needs to be inserted for particular plugin.
+     */
+    private static final String TENDER_LEVEL_PLUGIN_CLASS_NAME_TEMPLATE = "eu.dl.worker.indicator.plugin.%sIndicatorPlugin";
+
+    /**
+     * Template for lot level plugin class name. Plugin name needs to be inserted for particular plugin.
+     */
+    private static final String LOT_LEVEL_PLUGIN_CLASS_NAME_TEMPLATE = "eu.dl.worker.indicator.plugin.Lot%sIndicatorPlugin";
+
+    /**
+     * Class name of WinnerCAShare lot level plugin. It's located in tender-worker because it needs to access masterDAO.
+     */
+    private static final String LOT_WINNER_CA_SHARE_PLUGIN_CLASS_NAME = "eu.datlab.worker.master.plugin.LotWinnerCAShareIndicatorPlugin";
+
+
+    /**
+     * Initialization of everything.
      */
     public IndicatorWorker() {
         super();
@@ -103,10 +107,7 @@ public class IndicatorWorker extends BaseWorker {
 
     @Override
     public final void doWork(final Message message) {
-        transactionUtils.begin();
-
         String id = message.getValue("id");
-
         final MasterTender tender = masterDao.getById(id);
 
         if (tender != null) {
@@ -141,8 +142,6 @@ public class IndicatorWorker extends BaseWorker {
             populateUtils.depopulateBodies(Arrays.asList(tender));
             masterDao.save(tender);
         }
-
-        transactionUtils.commit();
     }
 
     @Override
@@ -159,60 +158,82 @@ public class IndicatorWorker extends BaseWorker {
      * Registers indicator plugins.
      */
     protected final void registerIndicatorPlugins() {
-        SingleBidIndicatorPlugin singleBidIndicatorPlugin = new SingleBidIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(singleBidIndicatorPlugin.getType(), singleBidIndicatorPlugin);
+        String indicatorsConfiguration = config.getParam("indicators.config");
+        if(indicatorsConfiguration == null) {
+            logger.error("No indicators configuration found! No plugins will be registered");
+            return;
+        }
+        IndicatorPlugin pluginInstance = null;
 
-        CentralizedProcurementIndicatorPlugin centralizedProcurementIndicatorPlugin = new CentralizedProcurementIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(centralizedProcurementIndicatorPlugin.getType(),
-            centralizedProcurementIndicatorPlugin);
+        // tender level plugins
+        Set<String> tenderLevelPluginNames = config.getParamValueAsList(indicatorsConfiguration + ".tenderLevel.plugins", ",",
+                HashSet.class);
+        if(tenderLevelPluginNames == null || tenderLevelPluginNames.isEmpty()) {
+            logger.warn("No tender level plugins found in configuration for key {}", indicatorsConfiguration + ".tenderLevel.plugins");
+        } else {
+            for(Object pluginName: tenderLevelPluginNames) {
+                // IndicatorPlugin<MasterTender>
+                pluginInstance = getPluginInstanceByName(String.format(TENDER_LEVEL_PLUGIN_CLASS_NAME_TEMPLATE, (String) pluginName));
+                if(pluginInstance == null) {
+                    continue;
+                }
+                tenderIndicatorPluginRegistry.registerPlugin(pluginInstance.getType(), pluginInstance);
+            }
+        }
 
-        AdvertisementPeriodIndicatorPlugin advertisementPeriodIndicatorPlugin = new AdvertisementPeriodIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(advertisementPeriodIndicatorPlugin.getType(), advertisementPeriodIndicatorPlugin);
+        // lot level plugins
+        Set<String> lotLevelPluginNames = config.getParamValueAsList(indicatorsConfiguration + ".lotLevel.plugins", ",",
+                HashSet.class);
+        if(lotLevelPluginNames == null || lotLevelPluginNames.isEmpty()) {
+            logger.warn("No lot level plugins found in configuration for key {}", indicatorsConfiguration + ".lotLevel.plugins");
+        } else {
+            for(Object pluginName: lotLevelPluginNames) {
+                // WinnerCAShare is the only plugin, located in tender-worker, so it has specific class name
+                if(pluginName.equals("WinnerCAShare")) {
+                    pluginInstance = getPluginInstanceByName(LOT_WINNER_CA_SHARE_PLUGIN_CLASS_NAME);
+                } else {
+                    pluginInstance = getPluginInstanceByName(String.format(LOT_LEVEL_PLUGIN_CLASS_NAME_TEMPLATE, (String) pluginName));
+                }
+                if(pluginInstance == null) {
+                    continue;
+                }
+                lotIndicatorPluginRegistry.registerPlugin(pluginInstance.getType(), (LotIndicatorPlugin) pluginInstance);
+            }
+        }
+    }
 
-        DecisionPeriodIndicatorPlugin decisionPeriodIndicatorPlugin = new DecisionPeriodIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(decisionPeriodIndicatorPlugin.getType(), decisionPeriodIndicatorPlugin);
-
-        CoveredByGPAIndicatorPlugin coveredByGPAIndicatorPlugin = new CoveredByGPAIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(coveredByGPAIndicatorPlugin.getType(), coveredByGPAIndicatorPlugin);
-
-        ElectronicAuctionIndicatorPlugin electronicAuctionIndicatorPlugin = new ElectronicAuctionIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(electronicAuctionIndicatorPlugin.getType(), electronicAuctionIndicatorPlugin);
-
-        FrameworkAgreementIndicatorPlugin frameworkAgreementIndicatorPlugin = new FrameworkAgreementIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(frameworkAgreementIndicatorPlugin.getType(), frameworkAgreementIndicatorPlugin);
-
-        NewCompanyIndicatorPlugin newCompanyIndicatorPlugin = new NewCompanyIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(newCompanyIndicatorPlugin.getType(), newCompanyIndicatorPlugin);
-
-        EnglishLanguageIndicatorPlugin englishLanguagePlugin = new EnglishLanguageIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(englishLanguagePlugin.getType(), englishLanguagePlugin);
-
-        CallForTenderIndicatorPlugin priorInformationNoticePlugin = new CallForTenderIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(priorInformationNoticePlugin.getType(), priorInformationNoticePlugin);
-
-        ProcedureTypeIndicatorPlugin procedureTypePlugin = new ProcedureTypeIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(procedureTypePlugin.getType(), procedureTypePlugin);
-
-        TaxHavenIndicatorPlugin taxHavenPlugin = new TaxHavenIndicatorPlugin();
-        tenderIndicatorPluginRegistry.registerPlugin(taxHavenPlugin.getType(), taxHavenPlugin);
-
-        KeyMissingFieldsIndicatorPlugin keyMissingFieldsPlugin = new KeyMissingFieldsIndicatorPlugin(
-                DAOFactory.getDAOFactory().getMatchedTenderDAO(null, null, Collections.emptyList()),
-                DAOFactory.getDAOFactory().getCleanTenderDAO(null, null));
-        tenderIndicatorPluginRegistry.registerPlugin(keyMissingFieldsPlugin.getType(), keyMissingFieldsPlugin);
-
-        NoticeAndAwardDiscrepanciesIndicatorPlugin noticeAndAwardDiscPlugin =
-                new NoticeAndAwardDiscrepanciesIndicatorPlugin(
+    /**
+     * Instantiate plugin by the class name.
+     * @param pluginName class name of plugin
+     * @return plugin instance
+     */
+    private IndicatorPlugin getPluginInstanceByName(final String pluginName) {
+        Class<?> pluginClass = null;
+        try {
+            pluginClass = Class.forName(pluginName);
+            Object pluginInstance = null;
+            // the only plugin with parameters is NoticeAndAwardDiscrepancies
+            if(pluginName.contains("NoticeAndAwardDiscrepancies")) {
+                Constructor<?> constructor = pluginClass.getConstructor(MatchedTenderDAO.class);
+                pluginInstance = constructor.newInstance(
                         DAOFactory.getDAOFactory().getMatchedTenderDAO(null, null, Collections.emptyList()));
-        tenderIndicatorPluginRegistry.registerPlugin(noticeAndAwardDiscPlugin.getType(), noticeAndAwardDiscPlugin);
-
-        LotSingleBidIndicatorPlugin corruptionSingleBid = new LotSingleBidIndicatorPlugin();
-        lotIndicatorPluginRegistry.registerPlugin(corruptionSingleBid.getType(), corruptionSingleBid);
-
-        LotDecisionPeriodIndicatorPlugin corruptionDecisionPeriod = new LotDecisionPeriodIndicatorPlugin();
-        lotIndicatorPluginRegistry.registerPlugin(corruptionDecisionPeriod.getType(), corruptionDecisionPeriod);
-
-        LotNewCompanyIndicatorPlugin corruptionNewCompany = new LotNewCompanyIndicatorPlugin();
-        lotIndicatorPluginRegistry.registerPlugin(corruptionNewCompany.getType(), corruptionNewCompany);
+            } else {
+                pluginInstance = pluginClass.getConstructor().newInstance();
+            }
+            return (IndicatorPlugin) pluginInstance;
+        } catch (ClassNotFoundException e) {
+            logger.info("No plugin with name {} found", pluginName);
+            e.printStackTrace();
+        } catch (NoSuchMethodException e) {
+            logger.info("No such method in class {}: {}", pluginName, e.getMessage());
+            e.printStackTrace();
+        } catch (IllegalAccessException | InvocationTargetException e) {
+            logger.error("Unable to invoke method for class {}: {}", pluginName, e.getMessage());
+            e.printStackTrace();
+        } catch (InstantiationException e) {
+            logger.error("Unable to instantiate class {}: {}", pluginName, e.getMessage());
+            e.printStackTrace();
+        }
+        return null;
     }
 }

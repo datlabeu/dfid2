@@ -45,6 +45,11 @@ public enum TenderIndicatorType {
     INTEGRITY_POLITICAL_CONNECTIONS,
 
     /**
+     * Corruption - cost overrun.
+     */
+    INTEGRITY_COST_OVERRUN,
+
+    /**
      * Administrative capacity - centralized procurement.
      */
     ADMINISTRATIVE_CENTRALIZED_PROCUREMENT,
@@ -77,6 +82,101 @@ public enum TenderIndicatorType {
     /**
      * Administrative - notice and award discrepancies.
      */
-    ADMINISTRATIVE_NOTICE_AND_AWARD_DISCREPANCIES
+    ADMINISTRATIVE_NOTICE_AND_AWARD_DISCREPANCIES,
+
+    /**
+     * Transparency - missing award decision date.
+     */
+    TRANSPARENCY_AWARD_DATE_MISSING,
+
+    /**
+     * Transparency - missing buyer name.
+     */
+    TRANSPARENCY_BUYER_NAME_MISSING,
+
+    /**
+     * Transparency - missing procedure type.
+     */
+    TRANSPARENCY_PROC_METHOD_MISSING,
+
+    /**
+     * Transparency - missing buyer nuts.
+     */
+    TRANSPARENCY_BUYER_LOC_MISSING,
+
+    /**
+     * Transparency - missing bidder id.
+     */
+    TRANSPARENCY_BIDDER_ID_MISSING,
+
+    /**
+     * Transparency - missing bidder name.
+     */
+    TRANSPARENCY_BIDDER_NAME_MISSING,
+
+    /**
+     * Transparency - missing tender CPVs.
+     */
+    TRANSPARENCY_MARKET_MISSING,
+
+    /**
+     * Transparency - missing tender title.
+     */
+    TRANSPARENCY_TITLE_MISSING,
+
+    /**
+     * Transparency - missing bid price.
+     */
+    TRANSPARENCY_VALUE_MISSING,
+
+    /**
+     * Transparency - missing year.
+     */
+    TRANSPARENCY_YEAR_MISSING,
+
+    /**
+     * Integrity - winner's contract share by buyers.
+     */
+    INTEGRITY_WINNER_CA_SHARE,
+
+    /**
+     * Transparency - missing contract notice eligible bid languages.
+     */
+    TRANSPARENCY_MISSING_ELIGIBLE_BID_LANGUAGES,
+
+    /**
+     * Transparency - missing contract notice selection method.
+     */
+    TRANSPARENCY_MISSING_SELECTION_METHOD,
+
+    /**
+     * Transparency - missing or incomplete contract notice cpvs.
+     */
+    TRANSPARENCY_MISSING_OR_INCOMPLETE_CPVS,
+
+    /**
+     * Transparency - missing or incomplete contract notice award criteria.
+     */
+    TRANSPARENCY_MISSING_OR_INCOMPLETE_AWARD_CRITERIA,
+
+    /**
+     * Transparency - missing or incomplete contract notice duration info.
+     */
+    TRANSPARENCY_MISSING_OR_INCOMPLETE_DURATION_INFO,
+
+    /**
+     * Transparency - missing contract award subcontracted info.
+     */
+    TRANSPARENCY_MISSING_SUBCONTRACTED_INFO,
+
+    /**
+     * Transparency - missing or incomplete contract award fundings.
+     */
+    TRANSPARENCY_MISSING_OR_INCOMPLETE_FUNDINGS_INFO,
+
+    /**
+     * Transparency - missing contract award address of implementation nuts.
+     */
+    TRANSPARENCY_MISSING_ADDRESS_OF_IMPLEMENTATION_NUTS,
 }
 

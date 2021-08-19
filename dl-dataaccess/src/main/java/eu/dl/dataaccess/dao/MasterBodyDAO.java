@@ -118,4 +118,15 @@ public interface MasterBodyDAO<T extends MasterBody> extends MasterDAO<T> {
      * @return boolean
      */
     boolean existsInPoliticalExposedPersons(String bvdIdNumber);
+
+    /**
+     * Returns bodies which matches at least one of given organization ids.
+     *
+     * @param ids
+     *      list of body ids
+     * @param sources
+     *      list of body worker class names
+     * @return list of bodies
+     */
+    List<MasterBody> getByBodyIds(List<String> ids, List<String> sources);
 }

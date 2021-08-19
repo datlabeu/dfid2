@@ -26,13 +26,11 @@ public class CacheFactory {
      * Creates and returns cache.
      *
      * @param cachePrefix used for keys
-     *
+     * @param cacheImplementation cache implementation identifier
      * @return ready to use cache
      */
-    public static final Cache getCache(final String cachePrefix) {
+    public static final Cache getCache(final String cachePrefix, final String cacheImplementation) {
         if (cache == null) {
-            Config config = Config.getInstance();
-            String cacheImplementation = config.getParam("cache.implementation");
             if (cacheImplementation != null && cacheImplementation.equals("cache2k")) {
                 logger.info("Returning cache2k cache");
                 cache = new Cache2kCache(cachePrefix);
@@ -44,5 +42,16 @@ public class CacheFactory {
             }
         }
         return cache;
+    }
+
+    /**
+     * Creates and returns cache.
+     *
+     * @param cachePrefix used for keys
+     * @return ready to use cache
+     */
+    public static final Cache getCache(final String cachePrefix) {
+        String cacheImplementation = Config.getInstance().getParam("cache.implementation");
+        return getCache(cachePrefix, cacheImplementation);
     }
 }

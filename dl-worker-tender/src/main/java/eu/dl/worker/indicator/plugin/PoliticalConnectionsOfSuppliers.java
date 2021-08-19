@@ -12,8 +12,7 @@ import static eu.dl.dataaccess.dto.codetables.BodyIdentifier.Type.BVD_ID;
 /**
  * Political connections indicator.
  */
-public final class PoliticalConnectionsOfSuppliers extends BaseIndicatorPlugin implements
-        IndicatorPlugin<MasterTender> {
+public final class PoliticalConnectionsOfSuppliers extends BaseIndicatorPlugin implements IndicatorPlugin<MasterTender> {
 
     private MasterBodyDAO masterBodyDAO;
 

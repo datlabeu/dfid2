@@ -1,17 +1,17 @@
 package eu.dl.worker.master;
 
-import java.util.Arrays;
-import java.util.List;
-
 import eu.dl.dataaccess.dto.master.MasterBody;
 import eu.dl.dataaccess.dto.matched.MatchedBody;
 import eu.dl.worker.master.plugin.AddressPlugin;
 import eu.dl.worker.master.plugin.body.BodyIdPlugin;
-import eu.dl.worker.master.plugin.body.MetaDataPlugin;
+import eu.dl.worker.master.plugin.body.EmailPlugin;
 import eu.dl.worker.master.plugin.generic.LogicalORPlugin;
 import eu.dl.worker.master.plugin.generic.ModusPlugin;
 import eu.dl.worker.master.plugin.generic.UnionPlugin;
 import eu.dl.worker.master.plugin.generic.converter.TenderConverter;
+
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Common functionality for all Body Master Record Deduplicators.
@@ -30,12 +30,12 @@ public abstract class BaseBodyMaster<T extends MatchedBody, V extends MasterBody
                 .registerPlugin("mainActivities", new UnionPlugin<>(Arrays.asList("mainActivities"),
                         new TenderConverter()))
                 .registerPlugin("contactsAndType", new ModusPlugin<>(
-                        Arrays.asList("name", "email", "contactPoint", "contactName", "phone", "buyerType"),
+                        Arrays.asList("name", "contactPoint", "contactName", "phone", "buyerType"),
                         new TenderConverter()))
+                .registerPlugin("email", new EmailPlugin())
                 .registerPlugin("address", new AddressPlugin<>(Arrays.asList("address")))
                 .registerPlugin("fields", new LogicalORPlugin<>(
-                        Arrays.asList("isPublic", "isSubsidized", "isSectoral", "isSme")))
-                .registerPlugin("metaData", new MetaDataPlugin());
+                        Arrays.asList("isPublic", "isSubsidized", "isSectoral", "isSme")));
         logger.debug("Registered body master common plugins to registry.");
     }
 

@@ -7,7 +7,7 @@ import eu.dl.dataaccess.dto.master.MasterTenderLot;
 /**
  * Interface for the lot indicator plugin.
  */
-public abstract class LotIndicatorPlugin extends BaseIndicatorPlugin implements IndicatorPlugin<MasterTenderLot> {
+public interface LotIndicatorPlugin extends IndicatorPlugin<MasterTenderLot> {
     /**
      * Takes data from source matched items, masters some fields of them and
      * returns result.
@@ -18,10 +18,5 @@ public abstract class LotIndicatorPlugin extends BaseIndicatorPlugin implements 
      *      tender, context of the lot
      * @return calculated indicator or null if none
      */
-    public abstract Indicator evaluate(MasterTenderLot lot, MasterTender tender);
-
-    @Override
-    public final Indicator evaluate(final MasterTenderLot lot) {
-        return evaluate(lot, null);
-    }
+    Indicator evaluate(MasterTenderLot lot, MasterTender tender);
 }

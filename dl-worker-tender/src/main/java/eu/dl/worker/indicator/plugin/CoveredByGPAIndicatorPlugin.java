@@ -9,8 +9,7 @@ import eu.dl.dataaccess.dto.master.MasterTenderLot;
 /**
  * This plugin calculates covered by GPA indicator.
  */
-public class CoveredByGPAIndicatorPlugin extends BaseIndicatorPlugin
-        implements IndicatorPlugin<MasterTender> {
+public class CoveredByGPAIndicatorPlugin extends BaseIndicatorPlugin implements IndicatorPlugin<MasterTender> {
 
     @Override
     public final Indicator evaluate(final MasterTender tender) {

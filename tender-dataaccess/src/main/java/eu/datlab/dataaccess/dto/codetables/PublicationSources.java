@@ -112,6 +112,11 @@ public final class PublicationSources {
     public static final String EE_EPE = "https://riigihanked.riik.ee/";
 
     /**
+     * E-procurement in Estonia, Open data.
+     */
+    public static final String EE_RIIGIHANKED = "https://riigihanked.riik.ee/";
+
+    /**
      * Hungary procurement authority.
      */
     public static final String HU_KH = "http://kozbeszerzes.hu/";
@@ -138,14 +143,24 @@ public final class PublicationSources {
     public static final String LT_CVPIS = "http://cvpp.lt/";
 
     /**
-     * Lithuania tenders.
+     * Bulgarian tenders.
      */
     public static final String BG_AOP = "http://www.aop.bg//";
+
+    /**
+     * Bulgarian tenders new source.
+     */
+    public static final String BG_EOP = "https://app.eop.bg";
 
     /**
      * Romania tenders.
      */
     public static final String RO_APA = "http://data.gov.ro/";
+
+    /**
+     * Romania SICAP tenders.
+     */
+    public static final String RO_SICAP = "http://e-licitatie.ro/";
 
     /**
      * Paraguay.
@@ -161,6 +176,11 @@ public final class PublicationSources {
      * Uganda.
      */
     public static final String UG_GPP = "http://gpp.ppda.go.ug/";
+
+    /**
+     * Uganda - transparency international.
+     */
+    public static final String UG_GPP_TI = "http://gpp.ppda.go.ug/TI";
 
     /**
      * Indonesia.

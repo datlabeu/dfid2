@@ -22,8 +22,13 @@ public class AdvertisementPeriodIndicatorPlugin extends BaseIndicatorPlugin impl
             return insufficient();
         }
 
+        if(Config.getInstance().getParam("indicator." + tender.getCountry() + ".advertisementPeriod.100.length") == null) {
+            return undefined();
+        }
+
         if (tender.getBidDeadline() == null) {
-            return isMissingBidDeadlineRedFlag(tender.getCountry()) ? calculated(0d) : calculated(100d);
+            double missingFlagValue = isMissingBidDeadlineRedFlag(tender.getCountry());
+            return calculated(missingFlagValue);
         } else {
             if (tender.getPublications() == null) {
                 return insufficient();
@@ -55,9 +60,8 @@ public class AdvertisementPeriodIndicatorPlugin extends BaseIndicatorPlugin impl
                 // the period is negative
                 return insufficient(metaData);
             } else {
-                    return checkAdvertisementPeriod(tender.getCountry(), advertisementPeriodLength)
-                            ? calculated(0d, metaData)
-                            : calculated(100d, metaData);
+                double redFlagValue = checkAdvertisementPeriod(tender.getCountry(), advertisementPeriodLength);
+                return calculated(redFlagValue, metaData);
             }
         }
     }
@@ -70,27 +74,37 @@ public class AdvertisementPeriodIndicatorPlugin extends BaseIndicatorPlugin impl
     /**
      * Checks whether missing bidDeadline means red flag for a given country.
      * @param countryCode country code
-     * @return true if missing bid deadline is considered red flag
+     * @return 100 if missing bid deadline is considered as non problematic, 50 if level 1, 0 if level 2
      */
-    private Boolean isMissingBidDeadlineRedFlag(final String countryCode) {
+    private double isMissingBidDeadlineRedFlag(final String countryCode) {
         // get configuration for given country
         String value = Config.getInstance().getParam("indicator." + countryCode + ".advertisementPeriod.missing");
-
-        return value != null && value.equals("1");
+        if(value == null || value.equals("100")) {
+            return 100d;
+        } else if (value.equals("50")) {
+            return 50d;
+        } else {
+            return 0d;
+        }
     }
 
     /**
-     * check whether the decision period is of problematic length.
+     * Check whether the advertisement period is of problematic length.
      *
      * @param countryCode country code
-     * @param advertisementPeriodLength decision period length
+     * @param advertisementPeriodLength advertisement period length
      *
-     * @return true if the decision period length is considered problematic
+     * @return 100 if not problematic, 50 if level 1, 0 if level 2
      */
-    private Boolean checkAdvertisementPeriod(final String countryCode, final Long advertisementPeriodLength) {
-        String value = Config.getInstance().getParam(
-                "indicator." + countryCode + ".advertisementPeriod.length");
-
-        return IndicatorUtils.isValueInPeriod(value, advertisementPeriodLength);
+    private double checkAdvertisementPeriod(final String countryCode, final Long advertisementPeriodLength) {
+        if(IndicatorUtils.isValueInPeriod(Config.getInstance().getParam(
+                "indicator." + countryCode + ".advertisementPeriod.100.length"), advertisementPeriodLength)) {
+            return 100d;
+        } else if (IndicatorUtils.isValueInPeriod(Config.getInstance().getParam(
+                "indicator." + countryCode + ".advertisementPeriod.50.length"), advertisementPeriodLength)) {
+            return 50d;
+        } else {
+            return 0d;
+        }
     }
 }

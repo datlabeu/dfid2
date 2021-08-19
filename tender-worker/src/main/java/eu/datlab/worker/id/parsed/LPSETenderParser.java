@@ -50,20 +50,20 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
             }
 
             t.setTitle(JsoupUtils.getFirstValueByLabel(d, "Nama (Lelang|Tender)"))
-                    .addBuyer(new ParsedBody().setName(JsoupUtils.getFirstValueByLabel(d, "Instansi")))
-                    .setSupplyType(JsoupUtils.getFirstValueByLabel(d, "Kategori"))
-                    .setNationalProcedureType(procedureType)
-                    .setProcedureType(procedureType)
-                    .addAwardCriterion(new ParsedAwardCriterion()
-                            .setName("Bobot Teknis")
-                            .setWeight(JsoupUtils.getFirstValueByLabel(d, "Bobot Teknis"))
-                            .setIsPriceRelated(Boolean.FALSE.toString()))
-                    .addAwardCriterion(new ParsedAwardCriterion()
-                            .setName("Bobot Biaya")
-                            .setWeight(JsoupUtils.getFirstValueByLabel(d, "Bobot Biaya"))
-                            .setIsPriceRelated(Boolean.TRUE.toString()))
-                    .setEligibilityCriteria(JsoupUtils.getFirstValueByLabel(d, "Syarat Kualifikasi"))
-                    .setSelectionMethod(JsoupUtils.getFirstValueByLabel(d, "Sistem Pengadaan"));
+                .addBuyer(new ParsedBody().setName(JsoupUtils.getFirstValueByLabel(d, "Instansi|K/L/PD")))
+                .setSupplyType(JsoupUtils.getFirstValueByLabel(d, "Kategori|(Jenis Pengadaan)"))
+                .setNationalProcedureType(procedureType)
+                .addAwardCriterion(new ParsedAwardCriterion()
+                        .setName("Bobot Teknis")
+                        .setWeight(JsoupUtils.getFirstValueByLabel(d, "Bobot Teknis"))
+                        .setIsPriceRelated(Boolean.FALSE.toString()))
+                .addAwardCriterion(new ParsedAwardCriterion()
+                        .setName("Bobot Biaya")
+                        .setWeight(JsoupUtils.getFirstValueByLabel(d, "Bobot Biaya"))
+                        .setIsPriceRelated(Boolean.TRUE.toString()))
+                .setEligibilityCriteria(JsoupUtils.getFirstValueByLabel(d, "Syarat Kualifikasi"))
+                .setSelectionMethod(JsoupUtils.getFirstValueByLabel(d, "Sistem Pengadaan"))
+                .setEstimatedPrice(parsePrice(JsoupUtils.getFirstValueByLabel(d, "Nilai Pagu Paket")));
 
             String sourceId = JsoupUtils.getFirstValueByLabel(d, "Kode (Lelang|Tender)");
             t.getPublications().get(0)
@@ -80,7 +80,7 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
                     .setPublicationDate(JsoupUtils.getFirstValueByLabel(d, "Tanggal Pembuatan")));
 
 
-            String isAwarded = JsoupUtils.getFirstValueByLabel(d, "Tahap (Lelang|Tender) Saat ini");
+            String isAwarded = JsoupUtils.getFirstValueByLabel(d, "Tahap (Lelang|Tender) Saat [iI]ni");
             if (isAwarded != null) {
                 t.setIsAwarded(String.valueOf(isAwarded.matches("(Lelang|Tender) Sudah Selesai")));
             }
@@ -95,7 +95,7 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
         PARTICIPANTS("peserta", (d, t) -> {
             ParsedTenderLot lot = t.getLots().get(0);
 
-            Elements rows = JsoupUtils.select("table.table-condensed > tbody > tr", d);
+            Elements rows = JsoupUtils.select("div.content > table > tbody > tr", d);
             for (Element r : rows) {
                 lot.addBid(new ParsedBid()
                         .addBidder(new ParsedBody()
@@ -111,8 +111,8 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
          */
         RESULTS("hasil", (d, t) -> {
             ParsedTenderLot lot = t.getLots().get(0);
-            Elements header = JsoupUtils.select("table.table-condensed > thead > tr", d);
-            Elements rows = JsoupUtils.select("table.table-condensed > tbody > tr", d);
+            Elements header = JsoupUtils.select("div.content > table > thead > tr", d);
+            Elements rows = JsoupUtils.select("div.content > table > tbody > tr", d);
             int pColumn = 0, kColumn = 0, priceColumn = 0, reasonColumn = 0;
             for (int i = 1; i < header.get(0).childNodeSize(); i += 2) {
                 if (header.get(0).childNode(i).childNodeSize() > 0
@@ -183,26 +183,28 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
         WINNER("pemenang", (d, t) -> {
             ParsedTenderLot lot = t.getLots().get(0);
 
-            t.setEstimatedPrice(parsePrice(JsoupUtils.getFirstValueByLabel(d, "Pagu")));
+            if (t.getEstimatedPrice() == null) {
+                t.setEstimatedPrice(parsePrice(JsoupUtils.getFirstValueByLabel(d, "Pagu")));
+            }
             // already in NOTICE
             if (t.getTitle() == null) {
                 t.setTitle(JsoupUtils.getFirstValueByLabel(d, "Nama (Lelang|Tender)"));
             }
             if (t.getSupplyType() == null) {
-                t.setSupplyType(JsoupUtils.getFirstValueByLabel(d, "Ketagori"));
+                t.setSupplyType(JsoupUtils.getFirstValueByLabel(d, "Ketagori|(Jenis Pengadaan)"));
             }
             if (t.getBuyers() != null && !t.getBuyers().isEmpty() && t.getBuyers().get(0).getName() == null) {
                 t.getBuyers().get(0).setName(JsoupUtils.getFirstValueByLabel(d, "Agency"));
             }
 
             ParsedBid winningBid = Optional.ofNullable(lot.getBids()).orElse(Collections.emptyList()).stream()
-                    .filter(n -> Boolean.TRUE.equals(n.getIsWinning()))
+                    .filter(n -> Boolean.TRUE.toString().equals(n.getIsWinning()))
                     .findFirst().orElse(null);
 
             ParsedBody winner = winningBid != null ? winningBid.getBidders().get(0) : null;
 
             // update winner data
-            Element winnerNode = JsoupUtils.selectFirst("table.table-condensed table.table-condensed > tbody > tr:eq(1)", d);
+            Element winnerNode = JsoupUtils.selectFirst("div.content > table table > tbody > tr:eq(1)", d);
             if (winnerNode != null) {
                 if (winner != null) {
                     if (winner.getName() == null) {
@@ -245,7 +247,7 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
         PLAN("jadwal", (d, t) -> {
             ParsedTenderLot lot = t.getLots().get(0);
 
-            Elements rows = JsoupUtils.select("table.table-condensed > tbody > tr", d);
+            Elements rows = JsoupUtils.select("div.content > table > tbody > tr", d);
 
             for (Element r : rows) {
                 String date = getChildText(r, 3);
@@ -375,7 +377,7 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
             LPSESnippetType type = LPSESnippetType.fromUrl(e.getKey());
             Document snippet = Jsoup.parse(e.getValue());
 
-            Element content = snippet.selectFirst("div.content > table.table-condensed > tbody");
+            Element content = snippet.selectFirst("div.content > table > tbody");
             if (content != null) {
                 snippets.put(type, snippet);
             }
@@ -425,5 +427,10 @@ public class LPSETenderParser extends BaseDatlabTenderParser {
     @Override
     protected final String countryOfOrigin(final ParsedTender parsed, final RawData raw) {
         return "ID";
+    }
+
+    @Override
+    protected final List<ParsedTender> postProcessSourceSpecificRules(final List<ParsedTender> parsed, final RawData raw) {
+        return parsed;
     }
 }

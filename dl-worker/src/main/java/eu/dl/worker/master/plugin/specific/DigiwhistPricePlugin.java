@@ -129,9 +129,13 @@ public class DigiwhistPricePlugin extends BasePlugin implements MasterPlugin<Mat
             return BigDecimal.ZERO;
         }
 
-        // returns first non-null value
-        return Stream.of(price.getNetAmountEur(), price.getMaxNetAmount(), price.getMinNetAmount())
-            .filter(Objects::nonNull).findFirst().orElse(BigDecimal.ZERO);
+        boolean currencyIsEUR  = price.getCurrency() != null && price.getCurrency().getCurrencyCode().equals("EUR");
+        // returns first non-null value, minNetAmount and maxNetAmount can only be used when currency is EUR
+        return Stream.of(
+                price.getNetAmountEur(),
+                currencyIsEUR ? price.getMaxNetAmount() : null,
+                currencyIsEUR ? price.getMinNetAmount() : null)
+                .filter(Objects::nonNull).findFirst().orElse(BigDecimal.ZERO);
     }
 
     /**

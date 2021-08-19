@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * Class provides functions for tender manipulation.
@@ -136,5 +137,29 @@ public final class TenderUtils {
         }
 
         return latest;
+    }
+
+    /**
+     * @param type
+     *      form type or null
+     * @return TRUE if the matched tender contains included publication of given form type.
+     */
+    public static Predicate<MasterTender> hasPublicationOfType(final PublicationFormType type) {
+        return t -> {
+            if (t.getPublications() == null) {
+                return false;
+            }
+
+            return t.getPublications().stream().anyMatch(isPublicationOfType(type));
+        };
+    }
+
+    /**
+     * @param type
+     *      form type or null
+     * @return TRUE if the publication is included publication and is of given form type.
+     */
+    public static Predicate<Publication> isPublicationOfType(final PublicationFormType type) {
+        return p -> Boolean.TRUE.equals(p.getIsIncluded()) && (type == null || type == p.getFormType());
     }
 }

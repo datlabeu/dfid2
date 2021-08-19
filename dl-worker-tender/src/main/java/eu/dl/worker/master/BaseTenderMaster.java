@@ -1,5 +1,7 @@
 package eu.dl.worker.master;
 
+import eu.dl.dataaccess.dao.MasterTenderDAO;
+import eu.dl.dataaccess.dto.StorableDTO;
 import eu.dl.dataaccess.dto.codetables.PublicationFormType;
 import eu.dl.dataaccess.dto.codetables.TenderLotStatus;
 import eu.dl.dataaccess.dto.generic.Amendment;
@@ -19,18 +21,24 @@ import eu.dl.dataaccess.dto.utils.DTOUtils;
 import eu.dl.utils.currency.CurrencyService;
 import eu.dl.utils.currency.CurrencyServiceFactory;
 import eu.dl.utils.currency.UnconvertableException;
+import eu.dl.worker.master.plugin.generic.LogicalORPlugin;
 import eu.dl.worker.master.plugin.specific.CorrigendumPlugin;
 import eu.dl.worker.master.plugin.specific.DigiwhistPricePlugin;
+import eu.dl.worker.master.plugin.specific.LotAndBidIdsPlugin;
 import eu.dl.worker.master.plugin.specific.NoLotStatusPlugin;
 import eu.dl.worker.master.utils.ContractImplementationUtils;
 import eu.dl.worker.master.utils.MasterUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.ObjectUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Currency;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -53,6 +61,8 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
 
     private final CorrigendumPlugin corrigendumPlugin;
 
+    private final LotAndBidIdsPlugin lotAndBidIds;
+
     /**
      * Initialization of everything.
      */
@@ -65,6 +75,8 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
         noLotStatusPlugin = new NoLotStatusPlugin();
 
         corrigendumPlugin = new CorrigendumPlugin();
+
+        lotAndBidIds = new LotAndBidIdsPlugin();
     }
 
     @Override
@@ -73,11 +85,13 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
 
     @Override
     protected final List<T> generalPreprocessData(final List<T> items) {
-        List preprocessedData = items.stream()
+        List<T> preprocessedData = items.stream()
                 .filter(isNotContractImplementation())
                 .filter(isNotTypeOther())
                 .filter(hasNotTooMuchLots())
                 .collect(Collectors.toList());
+
+        reduceDpsMainContractAward(preprocessedData);
 
         // add publication dates to TenderParts where needed i.e. Document
         populatePublicationDates(preprocessedData);
@@ -89,6 +103,89 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
         }
 
         return preprocessedData;
+    }
+
+    /**
+     * Removes main contract award if needed.
+     *
+     * @param items
+     *      list of matched tenders
+     */
+    private void reduceDpsMainContractAward(final List<T> items) {
+        MasterTender tender = new MasterTender();
+        LogicalORPlugin plugin = new LogicalORPlugin(Arrays.asList("isDps"));
+        tender = (MasterTender) plugin.master(items, tender, items);
+
+        if (Boolean.TRUE.equals(tender.getIsDps())) {
+            MatchedTender firstAward = items.stream()
+                .filter(hasPublicationOfType(PublicationFormType.CONTRACT_AWARD))
+                .sorted(compareTenderByPublicationDate())
+                .findFirst().orElse(null);
+
+            MatchedTender lastNotice = items.stream()
+                .filter(hasPublicationOfType(PublicationFormType.CONTRACT_NOTICE))
+                .sorted(compareTenderByPublicationDate().reversed())
+                .findFirst().orElse(null);
+
+            if (firstAward != null && lastNotice != null) {
+                BigDecimal bidsSumX2 = null;
+                BigDecimal lotsSum = null;
+                BigDecimal estimatedPrice = null;
+                if (firstAward.getLots() != null) {
+                    bidsSumX2 = firstAward.getLots().stream()
+                        .map(MatchedTenderLot::getBids).filter(Objects::nonNull).flatMap(List::stream)
+                        .map(MatchedBid::getPrice).filter(Objects::nonNull)
+                        .map(BasePrice::getNetAmount).filter(Objects::nonNull)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add)
+                        .multiply(BigDecimal.valueOf(2));
+                }
+
+                if (lastNotice.getLots() != null) {
+                    lotsSum = lastNotice.getLots().stream()
+                        .map(MatchedTenderLot::getEstimatedPrice).filter(Objects::nonNull)
+                        .map(BasePrice::getNetAmount).filter(Objects::nonNull)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                }
+
+                if (lastNotice.getEstimatedPrice() != null) {
+                    estimatedPrice = lastNotice.getEstimatedPrice().getNetAmount();
+                }
+
+                if ((ObjectUtils.allNotNull(bidsSumX2, lotsSum) && bidsSumX2.compareTo(lotsSum) > 0)
+                        || (ObjectUtils.allNotNull(bidsSumX2, estimatedPrice) && bidsSumX2.compareTo(estimatedPrice) > 0)) {
+                    items.remove(firstAward);
+                }
+            }
+        }
+    }
+
+    /**
+     * Compares tenders by publication date of included publication.
+     *
+     * @return master tender comparator
+     */
+    protected static Comparator<MatchedTender> compareTenderByPublicationDate() {
+        return (t1, t2) -> {
+            LocalDate date1 = t1.getPublications().stream()
+                .filter(isPublicationOfType(null))
+                .map(Publication::getPublicationDate)
+                .findFirst().orElse(null);
+
+            if (date1 == null) {
+                return -1;
+            }
+
+            LocalDate date2 = t2.getPublications().stream()
+                .filter(isPublicationOfType(null))
+                .map(Publication::getPublicationDate)
+                .findFirst().orElse(null);
+
+            if (date2 == null) {
+                return 1;
+            }
+
+            return date1.compareTo(date2);
+        };
     }
 
     /**
@@ -207,22 +304,8 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
      *
      * @return predicate testing whether the group does not contain Contract Implementation
      */
-    private static Predicate<MatchedTender> isNotContractImplementation() {
-        return new Predicate<MatchedTender>() {
-
-            @Override
-            public boolean test(final MatchedTender t) {
-                for (Publication publication : t.getPublications()) {
-                    if (publication.getIsIncluded() != null && publication.getIsIncluded()
-                            && publication.getFormType() != null
-                            && publication.getFormType().equals(PublicationFormType.CONTRACT_IMPLEMENTATION)) {
-                        return false;
-                    }
-                }
-                return true;
-            }
-
-        };
+    protected static Predicate<MatchedTender> isNotContractImplementation() {
+        return isContractImplementation().negate();
     }
 
     /**
@@ -231,21 +314,7 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
      * @return predicate testing whether the group does not contain Contract
      */
     protected static Predicate<MatchedTender> isNotContractAmendment() {
-        return new Predicate<MatchedTender>() {
-
-            @Override
-            public boolean test(final MatchedTender t) {
-                for (Publication publication : t.getPublications()) {
-                    if (publication.getIsIncluded() != null && publication.getIsIncluded()
-                            && publication.getFormType() != null
-                            && publication.getFormType().equals(PublicationFormType.CONTRACT_AMENDMENT)) {
-                        return false;
-                    }
-                }
-                return true;
-            }
-
-        };
+        return hasPublicationOfType(PublicationFormType.CONTRACT_AMENDMENT).negate();
     }
 
     /**
@@ -254,42 +323,19 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
      * @return predicate testing whether the group does contain Contract Implementation
      */
     private static Predicate<MatchedTender> isContractImplementation() {
-        return new Predicate<MatchedTender>() {
-
-            @Override
-            public boolean test(final MatchedTender t) {
-                for (Publication publication : t.getPublications()) {
-                    if (publication.getIsIncluded() != null && publication.getIsIncluded()
-                            && publication.getFormType() != null
-                            && publication.getFormType().equals(PublicationFormType.CONTRACT_IMPLEMENTATION)) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-        };
+        return hasPublicationOfType(PublicationFormType.CONTRACT_IMPLEMENTATION);
     }
 
     @Override
     protected final String getPersistentId(final List<T> matchedItems) {
-        String persistentId = null;
-        LocalDate min = null;
-
-        for (T t : matchedItems) {
-            for (Publication publication : t.getPublications()) {
-                if (publication.getIsIncluded() != null && publication.getIsIncluded()) {
-                    if ((min == null)
-                            || (publication.getPublicationDate() != null
-                            && min.isAfter(publication.getPublicationDate()))) {
-                        min = publication.getPublicationDate();
-                        persistentId = t.getPersistentId();
-                    }
-                }
-            }
+        if (matchedItems == null) {
+            return null;
         }
 
-        return persistentId;
+        return matchedItems.stream()
+            .min(Comparator.comparing(StorableDTO::getProcessingOrder))
+            .map(StorableDTO::getPersistentId)
+            .orElse(null);
     }
 
     /**
@@ -299,23 +345,33 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
      * @return predicate used to test type and isIncluded of tender.
      */
     private static Predicate<MatchedTender> isNotTypeOther() {
-        return new Predicate<MatchedTender>() {
+        return hasPublicationOfType(PublicationFormType.OTHER).negate();
+    }
 
-            @Override
-            public boolean test(final MatchedTender t) {
-                for (Publication publication : t.getPublications()) {
-                    if (publication.getIsIncluded() != null
-                            && publication.getIsIncluded()
-                            && publication.getFormType() != null
-                            && publication.getFormType().equals(PublicationFormType.OTHER)) {
-
-                        return false;
-                    }
-                }
-                return true;
+    /**
+     * @param type
+     *      form type or null
+     * @return TRUE if the matched tender contains included publication of given form type.
+     */
+    protected static Predicate<MatchedTender> hasPublicationOfType(final PublicationFormType type) {
+        return t -> {
+            if (t.getPublications() == null) {
+                return false;
             }
 
+            return t.getPublications().stream()
+                .filter(isPublicationOfType(type))
+                .findFirst().orElse(null) != null;
         };
+    }
+
+    /**
+     * @param type
+     *      form type or null
+     * @return TRUE if the publication is included publication and is of given form type.
+     */
+    protected static Predicate<Publication> isPublicationOfType(final PublicationFormType type) {
+        return p -> Boolean.TRUE.equals(p.getIsIncluded()) && (type == null || type == p.getFormType());
     }
 
     /**
@@ -341,22 +397,23 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
     }
 
     @Override
-    protected final V postProcessMasterRecord(final V masterTender,
-                                              final List<T> matchedTenders) {
+    protected final V postProcessMasterRecord(final V masterTender, final List<T> matchedTenders) {
+        MasterTender tender = masterTender;
+
         processContractImplementation(masterTender, matchedTenders);
 
         updateLotStatus(masterTender);
 
-        convertPrices(masterTender);
-
         MasterUtils.calculateEstimatedDurationInDays(masterTender);
 
-        MasterTender tender = masterTender;
-        tender = digiwhistPricePlugin.master(null, tender, null);
         tender = noLotStatusPlugin.master(null, tender, null);
         tender = corrigendumPlugin.master(null, tender, null);
+        tender = lotAndBidIds.master(null, tender, null);
 
+        convertPrices(masterTender);
 
+        // must follow the price conversion so netAmountEur is set
+        tender = digiwhistPricePlugin.master(null, tender, null);
         return (V) tender;
     }
 
@@ -375,6 +432,19 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
         // lot status update for whole cancelled tender
         if (Boolean.TRUE.equals(tender.getIsWholeTenderCancelled())) {
             tender.getLots().forEach(l -> l.setStatus(TenderLotStatus.CANCELLED));
+        } else {
+            int cancelled = 0, other = 0;
+            for (MasterTenderLot l : tender.getLots()) {
+                if (l.getStatus() == TenderLotStatus.CANCELLED) {
+                    cancelled++;
+                } else if (l.getStatus() != TenderLotStatus.ANNOUNCED) {
+                    other++;
+                }
+            }
+
+            if (cancelled == 1 && other == 0) {
+                tender.getLots().forEach(l -> l.setStatus(TenderLotStatus.CANCELLED));
+            }
         }
     }
 
@@ -388,7 +458,7 @@ public abstract class BaseTenderMaster<T extends MatchedTender, V extends Master
      */
     private void processContractImplementation(final V masterTender, final List<T> matchedTenders) {
         List<MatchedTender> contractImplementations = matchedTenders.stream().filter(isContractImplementation())
-                .collect(Collectors.toList());
+            .collect(Collectors.toList());
 
         ContractImplementationUtils.addPaymentsFromContractImplementations(masterTender, contractImplementations);
     }

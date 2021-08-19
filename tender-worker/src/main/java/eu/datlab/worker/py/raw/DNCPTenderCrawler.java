@@ -1,5 +1,7 @@
 package eu.datlab.worker.py.raw;
 
+import com.gargoylesoftware.htmlunit.TextPage;
+import com.gargoylesoftware.htmlunit.WebClient;
 import eu.datlab.dataaccess.dto.codetables.PublicationSources;
 import eu.datlab.worker.py.DNCPFormType;
 import eu.datlab.worker.raw.BaseDatlabIncrementalCrawler;
@@ -8,7 +10,6 @@ import java.io.File;
 import java.io.FileFilter;
 
 import java.io.IOException;
-import java.net.URL;
 import java.nio.charset.Charset;
 import java.time.LocalDate;
 import java.time.Month;
@@ -22,7 +23,6 @@ import java.util.Map;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.WildcardFileFilter;
 import org.apache.commons.lang3.StringUtils;
@@ -45,11 +45,7 @@ public final class DNCPTenderCrawler extends BaseDatlabIncrementalCrawler {
 
     private static final String BASE_CSV_URL = PublicationSources.PY_DNCP + "/images/opendata/";
 
-    private static final String WORK_DIR = "PY_workFolder";
-
-    private static final int CONNECTION_TIMEOUT = 60000;
-
-    private static final int READ_TIMEOUT = 30000;
+    private static final String WORK_DIR = "/tmp/PY_workFolder";
 
     private static final String BIDDERS_CSV_URL = "https://www.contrataciones.gov.py/licitaciones/adjudicacion/%s/oferentes.csv";
 
@@ -65,8 +61,8 @@ public final class DNCPTenderCrawler extends BaseDatlabIncrementalCrawler {
         super();
 
         // create work folder if necessary
-        final File destinationFolder = new File(FilenameUtils.getName(WORK_DIR));
-        destinationFolder.mkdir();
+        final File destinationFolder = new File(WORK_DIR);
+        destinationFolder.mkdirs();
     }
 
     @Override
@@ -86,15 +82,23 @@ public final class DNCPTenderCrawler extends BaseDatlabIncrementalCrawler {
                 // removes old files of the given type
                 FileFilter oldFilesFilter = new WildcardFileFilter(type.name().toLowerCase() + "_*");
                 File[] oldFiles = new File(WORK_DIR).listFiles(oldFilesFilter);
-                for (File f : oldFiles) {
-                    f.delete();
+                if (oldFiles != null) {
+                    for (File f : oldFiles) {
+                        f.delete();
+                    }
                 }
 
-                // download new file
                 try {
                     logger.info("Downloading of {} CSV from {} starts", type, csvUrl);
-                    FileUtils.copyURLToFile(new URL(csvUrl), new File(csvPath), CONNECTION_TIMEOUT, READ_TIMEOUT);
-                } catch (IOException ex) {
+
+                    WebClient webClient = new WebClient();
+                    webClient.getOptions().setUseInsecureSSL(true);
+                    webClient.getOptions().setThrowExceptionOnScriptError(false);
+                    webClient.getOptions().setJavaScriptEnabled(false);
+
+                    TextPage page = webClient.getPage(csvUrl);
+                    page.save(new File(csvPath));
+                } catch (final Exception ex) {
                     logger.error("Unable to download CSV file from {}", csvUrl, ex);
                     throw new UnrecoverableException("Unable to download CSV file");
                 }
